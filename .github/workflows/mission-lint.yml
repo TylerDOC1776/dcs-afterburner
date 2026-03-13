@@ -1,0 +1,71 @@
+name: Mission Lint
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    paths:
+      - "**/*.miz"
+
+jobs:
+  analyze:
+    name: Analyze Mission Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install afterburner
+        run: pip install -e .
+
+      - name: Find changed .miz files
+        id: changed
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.miz' | tr '\n' ' ')
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Analyze missions
+        id: analyze
+        if: steps.changed.outputs.files != ''
+        run: |
+          REPORT=""
+          CRITICAL=0
+          for f in ${{ steps.changed.outputs.files }}; do
+            echo "Analyzing $f..."
+            RESULT=$(afterburner analyze "$f" --json)
+            LABEL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['risk_label'])")
+            COUNT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); f=d['findings']; print(sum(1 for x in f if x['severity']=='critical'))")
+            REPORT="$REPORT\n### \`$f\`\nRisk: **$LABEL** | Critical findings: $COUNT\n\`\`\`\n$(afterburner analyze $f)\n\`\`\`\n"
+            if [ "$COUNT" -gt "0" ]; then CRITICAL=1; fi
+          done
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$REPORT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+
+      - name: Post PR comment
+        if: steps.changed.outputs.files != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `## Mission Lint Report\n\n${{ steps.analyze.outputs.report }}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Fail on critical findings
+        if: steps.analyze.outputs.critical == '1'
+        run: |
+          echo "One or more missions have critical findings. Review the PR comment for details."
+          exit 1
