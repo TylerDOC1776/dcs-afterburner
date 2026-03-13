@@ -9,8 +9,8 @@ on:
     branches: [Master, Testing]
 
 jobs:
-  test-orchestrator:
-    name: Orchestrator Tests
+  test:
+    name: Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,26 +20,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r orchestrator/requirements.txt httpx pytest pytest-asyncio
+        run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest orchestrator/tests/ -v
-
-  test-agent:
-    name: Agent Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r agent/requirements.txt httpx pytest pytest-asyncio
-
-      - name: Run tests
-        run: pytest agent/tests/ -v
+        run: pytest tests/ -v
 
   lint:
     name: Python Lint
@@ -55,7 +39,7 @@ jobs:
         run: pip install ruff
 
       - name: Check style
-        run: ruff check orchestrator/ agent/ discord-bot/
+        run: ruff check afterburner/
 
       - name: Check formatting
-        run: ruff format --check orchestrator/ agent/ discord-bot/
+        run: ruff format --check afterburner/
