@@ -1,0 +1,61 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [Master, Testing]
+
+jobs:
+  test-orchestrator:
+    name: Orchestrator Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r orchestrator/requirements.txt httpx pytest pytest-asyncio
+
+      - name: Run tests
+        run: pytest orchestrator/tests/ -v
+
+  test-agent:
+    name: Agent Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r agent/requirements.txt httpx pytest pytest-asyncio
+
+      - name: Run tests
+        run: pytest agent/tests/ -v
+
+  lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check style
+        run: ruff check orchestrator/ agent/ discord-bot/
+
+      - name: Check formatting
+        run: ruff format --check orchestrator/ agent/ discord-bot/

@@ -1,0 +1,21 @@
+name: Luacheck
+
+on: 
+  push:
+  pull_request:
+  merge_group:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    name: Run Luacheck
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Luacheck linter
+        uses: lunarmodules/luacheck@v1
