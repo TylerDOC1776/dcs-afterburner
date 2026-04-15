@@ -142,7 +142,7 @@ class _Parser:
             if next_c in ('"', "'"):
                 # ["key"] or ['key']
                 self._pos += 1  # skip [
-                key = self._parse_quoted_string()
+                key: str | int | float = self._parse_quoted_string()
                 self._skip()
                 if self._pos >= self._len or self._text[self._pos] != "]":
                     raise LuaParseError(
