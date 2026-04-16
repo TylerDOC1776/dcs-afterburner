@@ -308,3 +308,71 @@ def test_optimize_rejects_same_output_path(tmp_path):
         app, ["optimize", str(miz), "--safe", "--output", str(miz)]
     )
     assert result.exit_code == 2
+
+
+# ---------------------------------------------------------------------------
+# logs command
+# ---------------------------------------------------------------------------
+
+_CLEAN_LOG = "2026-04-12 23:55:01.939 INFO    EDCORE (Main): DCS started\n"
+
+_FINDING_LOG = (
+    "2026-04-12 23:55:01.939 WARNING EDCORE (Main): Severe precision loss\n"
+    "2026-04-12 23:55:02.000 ERROR   EDCORE (Main): Failed assert fabsf\n"
+)
+
+
+def test_logs_missing_file(tmp_path):
+    result = runner.invoke(app, ["logs", str(tmp_path / "nope.log")])
+    assert result.exit_code == 2
+
+
+def test_logs_clean_console_output(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_CLEAN_LOG)
+    result = runner.invoke(app, ["logs", str(log)])
+    assert result.exit_code == 0
+    assert "No findings" in result.output
+
+
+def test_logs_finding_console_output(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_FINDING_LOG)
+    result = runner.invoke(app, ["logs", str(log)])
+    assert result.exit_code == 0
+    assert "LOG_001" in result.output
+    assert "precision loss" in result.output.lower()
+
+
+def test_logs_json_output(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_FINDING_LOG)
+    result = runner.invoke(app, ["logs", str(log), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "findings" in data
+    assert "events_parsed" in data
+    assert any(f["rule_id"] == "LOG_001" for f in data["findings"])
+
+
+def test_logs_json_clean(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_CLEAN_LOG)
+    result = runner.invoke(app, ["logs", str(log), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["findings"] == []
+
+
+def test_logs_fail_on_critical_exits_nonzero(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_FINDING_LOG)
+    result = runner.invoke(app, ["logs", str(log), "--fail-on", "critical"])
+    assert result.exit_code == 1
+
+
+def test_logs_fail_on_none_always_zero(tmp_path):
+    log = tmp_path / "dcs.log"
+    log.write_text(_FINDING_LOG)
+    result = runner.invoke(app, ["logs", str(log), "--fail-on", "none"])
+    assert result.exit_code == 0

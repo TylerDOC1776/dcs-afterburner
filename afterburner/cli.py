@@ -199,7 +199,91 @@ def optimize(
         con.print()
 
 
+@app.command()
+def logs(
+    log_file: Path = typer.Argument(..., help="Path to DCS log file (dcs.log)"),
+    as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
+    fail_on: str = typer.Option(
+        "none",
+        "--fail-on",
+        help="Exit non-zero if any finding at this severity or above exists (critical|warning|info|none)",
+    ),
+) -> None:
+    """Analyze a DCS log file for known error patterns."""
+    if not log_file.exists():
+        _err.print(f"[red]Error:[/red] File not found: {log_file}")
+        raise typer.Exit(2)
+
+    from afterburner.log_analysis.correlator import correlate
+    from afterburner.log_analysis.parser import parse_log
+    from afterburner.models.findings import ReportFinding, Severity
+
+    try:
+        events = parse_log(log_file)
+    except Exception as exc:
+        _err.print(f"[red]Error reading log:[/red] {exc}")
+        raise typer.Exit(2)
+
+    findings = correlate(events)
+
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "source_file": str(log_file),
+                    "events_parsed": len(events),
+                    "findings": [
+                        {
+                            "rule_id": f.rule_id,
+                            "severity": f.severity.value,
+                            "title": f.title,
+                            "detail": f.detail,
+                            "fix": f.fix,
+                            "confidence": f.confidence,
+                        }
+                        for f in findings
+                    ],
+                },
+                indent=2,
+            )
+        )
+    else:
+        from rich.console import Console
+
+        _SEVERITY_STYLE = {
+            Severity.CRITICAL: "red",
+            Severity.WARNING: "yellow",
+            Severity.INFO: "cyan",
+        }
+        con = Console()
+        con.print()
+        con.print(
+            f"[bold cyan]DCS Afterburner — Logs[/bold cyan]  [dim]{log_file.name}[/dim]"
+        )
+        con.print(f"Events parsed: [dim]{len(events)}[/dim]")
+        con.print()
+        if findings:
+            for f in findings:
+                style = _SEVERITY_STYLE.get(f.severity, "white")
+                con.print(
+                    f"  [{style}]{f.severity.value.upper():8}[/{style}]  "
+                    f"[bold]{f.rule_id}[/bold]  {f.title}"
+                )
+                con.print(f"           {f.detail}")
+                if f.fix:
+                    con.print(f"           [dim]Fix: {f.fix}[/dim]")
+        else:
+            con.print("[green]No findings.[/green]")
+        con.print()
+
+    _check_fail_on_findings(findings, fail_on)
+
+
 def _check_fail_on(report: Report, fail_on: str) -> None:
+    _check_fail_on_findings(report.findings, fail_on)
+
+
+def _check_fail_on_findings(findings: list, fail_on: str) -> None:
     from afterburner.models.findings import Severity
 
     levels = {
@@ -209,5 +293,5 @@ def _check_fail_on(report: Report, fail_on: str) -> None:
         "none": set(),
     }
     threshold = levels.get(fail_on.lower(), set())
-    if threshold and any(f.severity in threshold for f in report.findings):
+    if threshold and any(f.severity in threshold for f in findings):
         raise typer.Exit(1)
