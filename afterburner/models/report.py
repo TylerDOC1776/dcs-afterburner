@@ -18,19 +18,19 @@ class Report:
         penalty = sum(
             15
             if f.severity == Severity.CRITICAL
-            else 5
+            else 8
             if f.severity == Severity.WARNING
-            else 1
+            else 2
             for f in self.findings
         )
         return max(0, 100 - penalty)
 
     def risk_label(self) -> str:
         s = self.risk_score()
-        if s >= 80:
+        if s >= 92:
             return "LOW"
-        if s >= 50:
+        if s >= 75:
             return "MODERATE"
-        if s >= 25:
+        if s >= 50:
             return "HIGH"
         return "CRITICAL"

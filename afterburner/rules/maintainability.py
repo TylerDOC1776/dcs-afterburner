@@ -12,6 +12,17 @@ _DEFAULT_PREFIXES = ("New ", "Static Object", "Vehicle", "Airplane", "Helicopter
 @register
 class UnnamedGroups(Rule):
     rule_id = "MAINT_001"
+    title = "Groups with default names"
+    severity = Severity.INFO
+    description = (
+        "Checks what percentage of groups still have DCS-generated default names "
+        "(e.g. 'New Group', 'Static Object #1'). Fires an info finding when more "
+        "than 5% of groups are unnamed. Default names make trigger and script "
+        "maintenance significantly harder — you can't tell what a group does "
+        "without opening it in the editor."
+    )
+    fix = "Rename groups to reflect their tactical purpose."
+    category = "maintainability"
 
     def check(self, mission: Mission) -> list[ReportFinding]:
         all_groups = mission.groups + mission.statics
@@ -40,6 +51,16 @@ class UnnamedGroups(Rule):
 @register
 class DuplicateGroupNames(Rule):
     rule_id = "MAINT_002"
+    title = "Duplicate group names"
+    severity = Severity.WARNING
+    description = (
+        "Checks for groups that share the same name. Fires a warning if any "
+        "duplicates are found. DCS trigger conditions that match groups by name "
+        "will fire on every group with that name — duplicate names cause "
+        "silent, hard-to-debug trigger behavior."
+    )
+    fix = "Ensure every group has a unique name."
+    category = "maintainability"
 
     def check(self, mission: Mission) -> list[ReportFinding]:
         all_groups = mission.groups + mission.statics

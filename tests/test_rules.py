@@ -94,7 +94,7 @@ def test_risk_score_critical():
         findings=[ReportFinding("X", Severity.CRITICAL, "t", "d")],
     )
     assert report.risk_score() == 85
-    assert report.risk_label() == "LOW"
+    assert report.risk_label() == "MODERATE"
 
 
 def test_risk_score_clamps_to_zero():
@@ -109,10 +109,10 @@ def test_risk_score_clamps_to_zero():
 def test_risk_label_moderate():
     from afterburner.models.findings import ReportFinding
 
-    findings = [ReportFinding("X", Severity.WARNING, "t", "d")] * 10
+    findings = [ReportFinding("X", Severity.WARNING, "t", "d")] * 3
     report = Report(mission=_make_mission(), findings=findings)
-    # 100 - 50 = 50 → MODERATE (≥50, <80)
-    assert report.risk_score() == 50
+    # 100 - (3 × 8) = 76 → MODERATE (≥75, <92)
+    assert report.risk_score() == 76
     assert report.risk_label() == "MODERATE"
 
 
@@ -124,24 +124,24 @@ def test_risk_label_moderate():
 def test_blot001_no_finding_below_threshold():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=500))
+    m = _make_mission(_make_summary(active_units=300))
     assert ActiveUnitCount().check(m) == []
 
 
-def test_blot001_warning_above_600():
+def test_blot001_warning_above_350():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=700))
+    m = _make_mission(_make_summary(active_units=400))
     findings = ActiveUnitCount().check(m)
     assert len(findings) == 1
     assert findings[0].severity == Severity.WARNING
     assert findings[0].rule_id == "BLOT_001"
 
 
-def test_blot001_critical_above_1000():
+def test_blot001_critical_above_600():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=1200))
+    m = _make_mission(_make_summary(active_units=700))
     findings = ActiveUnitCount().check(m)
     assert findings[0].severity == Severity.CRITICAL
 
@@ -191,10 +191,10 @@ def test_blot003_no_finding_at_150():
 # ------------------------------------------------------------------
 
 
-def test_blot004_warning_above_100():
+def test_blot004_warning_above_75():
     from afterburner.rules.mission_size import ZoneCount
 
-    m = _make_mission(_make_summary(zone_count=101))
+    m = _make_mission(_make_summary(zone_count=76))
     assert ZoneCount().check(m)[0].severity == Severity.WARNING
 
 
