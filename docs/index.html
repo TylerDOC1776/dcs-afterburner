@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCS Afterburner — Mission Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #050905;
+      --panel:        #0b130b;
+      --border:       #1a3d1a;
+      --border-hi:    #2d6b2d;
+      --text-dim:     #3d6e3d;
+      --text:         #6aaa6a;
+      --text-hi:      #9ed09e;
+      --accent:       #33ff55;
+      --crit:         #ff2828;
+      --warn:         #e8a020;
+      --info:         #22aaff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* Subtle scanline overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.07) 2px,
+        rgba(0, 0, 0, 0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .title-block h1 {
+      font-size: 18px;
+      letter-spacing: 5px;
+      color: var(--accent);
+      text-shadow: 0 0 14px rgba(51, 255, 85, 0.35);
+    }
+
+    .title-block .sub {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .dot.busy   { background: var(--warn); animation: blink 1s ease-in-out infinite; }
+    .dot.ready  { background: var(--accent); box-shadow: 0 0 6px rgba(51,255,85,0.5); }
+    .dot.err    { background: var(--crit); }
+
+    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
+
+    /* ── Layout ── */
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 36px 24px 48px;
+    }
+
+    .field-label {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    /* ── Drop zones ── */
+    .upload-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 560px) { .upload-row { grid-template-columns: 1fr; } }
+
+    .drop-zone {
+      position: relative;
+      border: 1px dashed var(--border-hi);
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .drop-zone:hover, .drop-zone.over {
+      border-color: var(--accent);
+      background: rgba(51, 255, 85, 0.03);
+    }
+
+    .drop-zone.loaded {
+      border-style: solid;
+      border-color: var(--accent);
+    }
+
+    .drop-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .dz-icon  { font-size: 22px; color: var(--text-dim); margin-bottom: 6px; }
+    .loaded .dz-icon { color: var(--accent); }
+
+    .dz-main  { font-size: 12px; letter-spacing: 2px; color: var(--text); }
+    .dz-hint  { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+    .dz-file  { font-size: 12px; color: var(--accent); margin-top: 6px; }
+
+    /* ── Analyze button ── */
+    #analyze-btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 14px;
+      letter-spacing: 5px;
+      cursor: pointer;
+      text-transform: uppercase;
+      text-shadow: 0 0 8px rgba(51,255,85,0.3);
+      transition: background 0.15s;
+    }
+
+    #analyze-btn:hover:not(:disabled) { background: rgba(51,255,85,0.07); }
+
+    #analyze-btn:disabled {
+      border-color: var(--border);
+      color: var(--text-dim);
+      text-shadow: none;
+      cursor: not-allowed;
+    }
+
+    /* ── Progress ── */
+    #progress {
+      display: none;
+      padding: 18px 0 4px;
+      text-align: center;
+    }
+
+    #progress.show { display: block; }
+
+    .prog-label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+    }
+
+    .prog-track {
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      margin-top: 10px;
+      overflow: hidden;
+    }
+
+    .prog-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+      box-shadow: 0 0 8px rgba(51,255,85,0.5);
+    }
+
+    /* ── Results ── */
+    #results {
+      display: none;
+      margin-top: 36px;
+    }
+
+    #results.show { display: block; }
+
+    /* Score + meta header */
+    .result-head {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      align-items: flex-start;
+    }
+
+    .score-card {
+      border: 1px solid var(--border-hi);
+      padding: 14px 18px;
+      text-align: center;
+      flex-shrink: 0;
+      min-width: 110px;
+      background: var(--panel);
+    }
+
+    .score-num {
+      font-size: 52px;
+      line-height: 1;
+      font-weight: normal;
+    }
+
+    .score-lbl {
+      font-size: 11px;
+      letter-spacing: 3px;
+      margin-top: 5px;
+    }
+
+    .score-tag {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      margin-top: 4px;
+    }
+
+    /* Score band colors */
+    .band-LOW      .score-num, .band-LOW      .score-lbl { color: var(--accent); }
+    .band-MODERATE .score-num, .band-MODERATE .score-lbl { color: var(--warn); }
+    .band-HIGH     .score-num, .band-HIGH     .score-lbl { color: #ff7700; }
+    .band-CRITICAL .score-num, .band-CRITICAL .score-lbl { color: var(--crit); }
+
+    .meta-card {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 14px 18px;
+    }
+
+    .mission-name {
+      font-size: 15px;
+      color: var(--text-hi);
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+      word-break: break-all;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 5px 20px;
+    }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .stat-k {
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+    }
+
+    .stat-v {
+      font-size: 11px;
+      color: var(--text-hi);
+    }
+
+    /* Findings panel */
+    .findings-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+    }
+
+    .findings-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+
+    .findings-title {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      flex: 1;
+    }
+
+    .badge {
+      font-size: 10px;
+      letter-spacing: 1px;
+      padding: 1px 7px;
+      border: 1px solid;
+    }
+
+    .badge.c { color: var(--crit); border-color: var(--crit); }
+    .badge.w { color: var(--warn); border-color: var(--warn); }
+    .badge.i { color: var(--info); border-color: var(--info); }
+
+    .finding {
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .finding:last-child { border-bottom: none; }
+
+    .f-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .f-sev {
+      font-size: 10px;
+      letter-spacing: 1px;
+      padding: 1px 6px;
+      border: 1px solid;
+      flex-shrink: 0;
+    }
+
+    .f-sev.critical { color: var(--crit); border-color: var(--crit); }
+    .f-sev.warning  { color: var(--warn); border-color: var(--warn); }
+    .f-sev.info     { color: var(--info); border-color: var(--info); }
+
+    .f-id    { font-size: 10px; letter-spacing: 1px; color: var(--text-dim); flex-shrink: 0; }
+    .f-title { font-size: 13px; color: var(--text-hi); }
+
+    .f-detail {
+      font-size: 12px;
+      color: var(--text);
+      margin-top: 5px;
+    }
+
+    .f-fix {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    .f-fix::before { content: 'FIX \00bb  '; }
+
+    .clear-msg {
+      text-align: center;
+      color: var(--accent);
+      padding: 20px;
+      font-size: 12px;
+      letter-spacing: 3px;
+    }
+
+    /* Error */
+    .err-box {
+      border: 1px solid var(--crit);
+      padding: 16px;
+      color: var(--crit);
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+
+    .err-box pre {
+      margin-top: 10px;
+      font-size: 10px;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Footer note */
+    .footer-note {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+    }
+
+    .footer-note a { color: var(--text-dim); }
+    .footer-note a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>DCS AFTERBURNER</h1>
+    <div class="sub">MISSION ANALYSIS SYSTEM // BROWSER EDITION</div>
+  </div>
+  <div class="status-row">
+    <div class="dot busy" id="dot"></div>
+    <span id="status-txt">INITIALIZING</span>
+  </div>
+</header>
+
+<main>
+  <div class="upload-row">
+    <div>
+      <div class="field-label">Mission File</div>
+      <div class="drop-zone" id="miz-zone">
+        <input type="file" id="miz-input" accept=".miz">
+        <div class="dz-icon">▣</div>
+        <div class="dz-main">DROP .MIZ FILE</div>
+        <div class="dz-hint">or click to select</div>
+        <div class="dz-file" id="miz-name"></div>
+      </div>
+    </div>
+    <div>
+      <div class="field-label">DCS Log File <span style="color:var(--text-dim);letter-spacing:0">(optional)</span></div>
+      <div class="drop-zone" id="log-zone">
+        <input type="file" id="log-input">
+        <div class="dz-icon">▤</div>
+        <div class="dz-main">DROP DCS.LOG FILE</div>
+        <div class="dz-hint">correlates runtime errors with findings</div>
+        <div class="dz-file" id="log-name"></div>
+      </div>
+    </div>
+  </div>
+
+  <button id="analyze-btn" disabled>[ ANALYZE MISSION ]</button>
+
+  <div id="progress">
+    <div class="prog-label" id="prog-txt">LOADING ANALYSIS ENGINE</div>
+    <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="footer-note">
+    All analysis runs entirely in your browser &mdash; no files are uploaded or stored.
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <a href="https://github.com/TylerDOC1776/dcs-afterburner" target="_blank">github.com/TylerDOC1776/dcs-afterburner</a>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────────────────
+let pyodide     = null;
+let engineReady = false;
+let mizFile     = null;
+let logFile     = null;
+
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const dot        = document.getElementById('dot');
+const statusTxt  = document.getElementById('status-txt');
+const analyzeBtn = document.getElementById('analyze-btn');
+const progDiv    = document.getElementById('progress');
+const progTxt    = document.getElementById('prog-txt');
+const progFill   = document.getElementById('prog-fill');
+const resultsDiv = document.getElementById('results');
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+function setStatus(cls, msg) {
+  dot.className = 'dot ' + cls;
+  statusTxt.textContent = msg;
+}
+
+function showProgress(msg, pct) {
+  progDiv.classList.add('show');
+  progTxt.textContent = msg;
+  progFill.style.width = pct + '%';
+}
+
+function hideProgress() {
+  progDiv.classList.remove('show');
+  progFill.style.width = '0%';
+}
+
+function refreshBtn() {
+  analyzeBtn.disabled = !(engineReady && mizFile);
+}
+
+// ── Drop zone wiring ──────────────────────────────────────────────────────────
+function wireDropZone(zoneId, inputId, nameId, onPick) {
+  const zone  = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  const nameEl = document.getElementById(nameId);
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) onPick(input.files[0], zone, nameEl);
+  });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', ()  => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    const f = e.dataTransfer.files[0];
+    if (f) onPick(f, zone, nameEl);
+  });
+}
+
+wireDropZone('miz-zone', 'miz-input', 'miz-name', (f, zone, nameEl) => {
+  mizFile = f;
+  nameEl.textContent = f.name;
+  zone.classList.add('loaded');
+  refreshBtn();
+});
+
+wireDropZone('log-zone', 'log-input', 'log-name', (f, zone, nameEl) => {
+  logFile = f;
+  nameEl.textContent = f.name;
+  zone.classList.add('loaded');
+});
+
+// ── Pyodide init ──────────────────────────────────────────────────────────────
+async function initEngine() {
+  setStatus('busy', 'INITIALIZING');
+  showProgress('LOADING ANALYSIS ENGINE', 8);
+
+  try {
+    pyodide = await loadPyodide();
+    showProgress('LOADING PACKAGES', 35);
+
+    await pyodide.loadPackage('micropip');
+    showProgress('INSTALLING AFTERBURNER', 58);
+
+    const micropip = pyodide.pyimport('micropip');
+    const base = window.location.href.replace(/\/[^/]*$/, '/');
+    await micropip.install(base + 'wheels/dcs_afterburner-0.1.0-py3-none-any.whl');
+
+    showProgress('LOADING RULES', 80);
+
+    await pyodide.runPythonAsync(`
+import json
+from pathlib import Path
+import afterburner.rules          # side-effect: registers all rules
+from afterburner.parsers.mission_parser import parse
+from afterburner.rules.base import run_all
+from afterburner.reporters.json_report import to_json
+from afterburner.models.report import Report
+
+def analyze(miz_path, log_path=None):
+    try:
+        parsed   = parse(Path(miz_path))
+        findings = run_all(parsed)
+        log_findings = []
+        if log_path:
+            from afterburner.log_analysis.correlator import boost_findings, correlate
+            from afterburner.log_analysis.parser import parse_log
+            events       = parse_log(Path(log_path))
+            log_findings = correlate(events)
+            findings     = boost_findings(findings, log_findings)
+        report = Report(mission=parsed, findings=findings + log_findings)
+        return json.dumps({"ok": True, "data": to_json(report)})
+    except Exception as exc:
+        import traceback
+        return json.dumps({"ok": False, "error": str(exc), "trace": traceback.format_exc()})
+`);
+
+    showProgress('READY', 100);
+    setTimeout(() => {
+      hideProgress();
+      setStatus('ready', 'SYSTEM READY');
+      engineReady = true;
+      refreshBtn();
+    }, 350);
+
+  } catch (err) {
+    hideProgress();
+    setStatus('err', 'INIT FAILED');
+    showError('Engine initialization failed', String(err));
+  }
+}
+
+// ── Analyze ───────────────────────────────────────────────────────────────────
+analyzeBtn.addEventListener('click', async () => {
+  if (!mizFile || !engineReady) return;
+
+  analyzeBtn.disabled = true;
+  resultsDiv.classList.remove('show');
+  resultsDiv.innerHTML = '';
+  showProgress('READING FILES', 15);
+
+  try {
+    pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
+
+    let logArg = 'None';
+    if (logFile) {
+      pyodide.FS.writeFile('/tmp/dcs.log', new Uint8Array(await logFile.arrayBuffer()));
+      logArg = "'/tmp/dcs.log'";
+    }
+
+    showProgress('ANALYZING MISSION', 55);
+    const raw    = await pyodide.runPythonAsync(`analyze('/tmp/mission.miz', ${logArg})`);
+    const result = JSON.parse(raw);
+
+    showProgress('RENDERING', 90);
+    setTimeout(() => {
+      hideProgress();
+      refreshBtn();
+      if (result.ok) {
+        renderResults(result.data);
+      } else {
+        showError('Analysis failed', result.error, result.trace);
+      }
+    }, 150);
+
+  } catch (err) {
+    hideProgress();
+    refreshBtn();
+    showError('Unexpected error', String(err));
+  }
+});
+
+// ── Render ────────────────────────────────────────────────────────────────────
+const SEV_ORDER = ['critical', 'warning', 'info'];
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderResults(d) {
+  const s     = d.summary;
+  const band  = s.risk_label;   // LOW | MODERATE | HIGH | CRITICAL
+  const score = s.risk_score;
+
+  const counts = { critical: 0, warning: 0, info: 0 };
+  d.findings.forEach(f => { if (counts[f.severity] !== undefined) counts[f.severity]++; });
+
+  // Badge HTML
+  const badges = [
+    counts.critical ? `<span class="badge c">${counts.critical} CRITICAL</span>` : '',
+    counts.warning  ? `<span class="badge w">${counts.warning} WARNING</span>`   : '',
+    counts.info     ? `<span class="badge i">${counts.info} INFO</span>`          : '',
+  ].join('');
+
+  // Sorted findings
+  const sorted = [...d.findings].sort(
+    (a, b) => SEV_ORDER.indexOf(a.severity) - SEV_ORDER.indexOf(b.severity)
+  );
+
+  const findingsHtml = sorted.length === 0
+    ? '<div class="clear-msg">NO FINDINGS — MISSION CLEAR</div>'
+    : sorted.map(f => `
+        <div class="finding">
+          <div class="f-header">
+            <span class="f-sev ${f.severity}">${f.severity.toUpperCase()}</span>
+            <span class="f-id">${esc(f.rule_id)}</span>
+            <span class="f-title">${esc(f.title)}</span>
+          </div>
+          <div class="f-detail">${esc(f.detail)}</div>
+          ${f.fix ? `<div class="f-fix">${esc(f.fix)}</div>` : ''}
+        </div>`).join('');
+
+  resultsDiv.innerHTML = `
+    <div class="result-head">
+      <div class="score-card band-${band}">
+        <div class="score-num">${score}</div>
+        <div class="score-lbl">${band}</div>
+        <div class="score-tag">RISK SCORE</div>
+      </div>
+      <div class="meta-card">
+        <div class="mission-name">${esc(d.mission_name || d.source_file)}</div>
+        <div class="stats-grid">
+          <div class="stat"><span class="stat-k">THEATRE</span>       <span class="stat-v">${esc(s.theatre)}</span></div>
+          <div class="stat"><span class="stat-k">ACTIVE UNITS</span>  <span class="stat-v">${s.active_units}</span></div>
+          <div class="stat"><span class="stat-k">TOTAL UNITS</span>   <span class="stat-v">${s.total_units}</span></div>
+          <div class="stat"><span class="stat-k">PLAYER SLOTS</span>  <span class="stat-v">${s.player_slots}</span></div>
+          <div class="stat"><span class="stat-k">TRIGGERS</span>      <span class="stat-v">${s.trigger_count}</span></div>
+          <div class="stat"><span class="stat-k">ZONES</span>         <span class="stat-v">${s.zone_count}</span></div>
+          <div class="stat"><span class="stat-k">STATIC OBJECTS</span><span class="stat-v">${s.total_statics}</span></div>
+          <div class="stat"><span class="stat-k">GROUPS</span>        <span class="stat-v">${s.total_groups}</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="findings-panel">
+      <div class="findings-head">
+        <span class="findings-title">FINDINGS</span>
+        ${badges}
+      </div>
+      ${findingsHtml}
+    </div>`;
+
+  resultsDiv.classList.add('show');
+  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showError(heading, msg, trace) {
+  resultsDiv.innerHTML = `
+    <div class="err-box">
+      ${esc(heading).toUpperCase()}
+      <pre>${esc(msg)}${trace ? '\n\n' + esc(trace) : ''}</pre>
+    </div>`;
+  resultsDiv.classList.add('show');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+initEngine();
+</script>
+
+</body>
+</html>

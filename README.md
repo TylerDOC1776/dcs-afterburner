@@ -4,6 +4,8 @@
 
 A mission linting, diagnostics, and safe optimization toolkit for DCS World `.miz` files.
 
+**[Browser-based mission analyzer →](https://tylerdoc1776.github.io/dcs-afterburner/)** — drop a `.miz` (and optional `dcs.log`) directly in your browser. No install required, nothing uploaded.
+
 Analyze missions before deployment, catch common performance killers, compare versions over time, and optionally apply low-risk automatic optimizations. Optionally load a `dcs.log` file alongside any mission to correlate static findings with real runtime errors.
 
 ---
@@ -80,7 +82,7 @@ afterburner diff old.miz new.miz
 afterburner analyze mission.miz --log dcs.log
 
 # Inspect a log file on its own
-afterburner log dcs.log
+afterburner logs dcs.log
 
 # List all available rules
 afterburner rules list
