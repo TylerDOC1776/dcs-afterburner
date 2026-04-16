@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/wiki/TylerDOC1776/dcs-afterburner/dcs-afterburnerlogo.png" alt="DCS Afterburner" width="150">
+<img src="dcs-afterburnerlogo.png" alt="DCS Afterburner" width="150">
 
 # DCS-Afterburner
 
