@@ -310,6 +310,44 @@ def logs(
     _check_fail_on_findings(findings, fail_on)
 
 
+@app.command()
+def diff(
+    old_mission: Path = typer.Argument(..., metavar="OLD", help="Baseline .miz file"),
+    new_mission: Path = typer.Argument(..., metavar="NEW", help="Updated .miz file"),
+    as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
+) -> None:
+    """Compare two DCS .miz mission files and show what changed."""
+    for path in (old_mission, new_mission):
+        if not path.exists():
+            _err.print(f"[red]Error:[/red] File not found: {path}")
+            raise typer.Exit(2)
+        if path.suffix.lower() != ".miz":
+            _err.print(f"[red]Error:[/red] Expected a .miz file, got: {path}")
+            raise typer.Exit(2)
+
+    try:
+        old_parsed = parse(old_mission)
+    except Exception as exc:
+        _err.print(f"[red]Error parsing {old_mission.name}:[/red] {exc}")
+        raise typer.Exit(2)
+
+    try:
+        new_parsed = parse(new_mission)
+    except Exception as exc:
+        _err.print(f"[red]Error parsing {new_mission.name}:[/red] {exc}")
+        raise typer.Exit(2)
+
+    from afterburner.diff import compute, print_diff
+    from afterburner.diff import to_json as diff_to_json
+
+    result = compute(old_parsed, new_parsed)
+
+    if as_json:
+        print(json.dumps(diff_to_json(result), indent=2))
+    else:
+        print_diff(result)
+
+
 def _check_fail_on(report: Report, fail_on: str) -> None:
     _check_fail_on_findings(report.findings, fail_on)
 
