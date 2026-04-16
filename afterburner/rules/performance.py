@@ -10,6 +10,16 @@ from afterburner.rules.base import Rule, register
 @register
 class UncontrolledAircraft(Rule):
     rule_id = "PERF_003"
+    title = "Uncontrolled active aircraft"
+    severity = Severity.WARNING
+    description = (
+        "Counts uncontrolled air groups (planes or helicopters) that are active "
+        "at mission start. Fires a warning above 10. "
+        "Uncontrolled aircraft still load AI pathfinding data and consume CPU — "
+        "they are not free just because they have no orders."
+    )
+    fix = "Late-activate uncontrolled aircraft or remove groups not needed at start."
+    category = "performance"
 
     def check(self, mission: Mission) -> list[ReportFinding]:
         air_categories = {Category.PLANE, Category.HELICOPTER}

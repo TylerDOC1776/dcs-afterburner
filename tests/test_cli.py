@@ -95,6 +95,54 @@ def test_analyze_console_output(tmp_path):
     assert "CLI Test" in result.output
 
 
+def test_analyze_with_clean_log(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text("2026-04-12 23:55:01.939 INFO    EDCORE (Main): DCS started\n")
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log)])
+    assert result.exit_code == 0
+    assert "events scanned" in result.output
+    assert "Log Findings" not in result.output
+
+
+def test_analyze_with_finding_log(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text(
+        "2026-04-12 23:55:01.939 WARNING EDCORE (Main): Severe precision loss\n"
+        "2026-04-12 23:55:02.000 ERROR   EDCORE (Main): Failed assert fabsf\n"
+    )
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log)])
+    assert result.exit_code == 0
+    assert "Log Findings" in result.output
+    assert "LOG_001" in result.output
+
+
+def test_analyze_with_log_json(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text(
+        "2026-04-12 23:55:01.939 WARNING EDCORE (Main): Severe precision loss\n"
+        "2026-04-12 23:55:02.000 ERROR   EDCORE (Main): Failed assert fabsf\n"
+    )
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "log_source" in data
+    assert "log_events_parsed" in data
+    assert any(f["rule_id"] == "LOG_001" for f in data["findings"])
+
+
+def test_analyze_log_missing_file(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(tmp_path / "nope.log")])
+    assert result.exit_code == 2
+
+
 def test_analyze_json_output(tmp_path):
     miz = tmp_path / "test.miz"
     _make_miz(miz)
@@ -149,7 +197,7 @@ def test_analyze_corrupt_miz(tmp_path):
 
 
 def test_analyze_fail_on_warning_exits_nonzero(tmp_path):
-    """--fail-on warning should exit 1 when a warning-level finding is present."""
+    """--fail-on warning should exit 1 when a critical-level finding is present."""
     import zipfile
 
     # Build a mission with enough active units to trigger BLOT_001 warning (>600)
@@ -175,7 +223,7 @@ mission =
 ["group"] =
 {
 """
-    # Add 650 units across groups to exceed the active unit threshold
+    # Add 650 units across groups to exceed the active unit critical threshold (>600)
     for i in range(1, 66):
         units = ""
         for j in range(1, 11):
@@ -376,3 +424,45 @@ def test_logs_fail_on_none_always_zero(tmp_path):
     log.write_text(_FINDING_LOG)
     result = runner.invoke(app, ["logs", str(log), "--fail-on", "none"])
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# rules subcommands
+# ---------------------------------------------------------------------------
+
+
+def test_rules_list_output():
+    result = runner.invoke(app, ["rules", "list"])
+    assert result.exit_code == 0
+    # spot-check a rule from each category
+    assert "BLOT_001" in result.output
+    assert "PERF_003" in result.output
+    assert "MAINT_001" in result.output
+    assert "MAINT_002" in result.output
+
+
+def test_rules_list_columns():
+    result = runner.invoke(app, ["rules", "list"])
+    assert result.exit_code == 0
+    assert "bloat" in result.output
+    assert "performance" in result.output
+    assert "maintainability" in result.output
+
+
+def test_rules_explain_known_rule():
+    result = runner.invoke(app, ["rules", "explain", "BLOT_001"])
+    assert result.exit_code == 0
+    assert "BLOT_001" in result.output
+    assert "critical" in result.output
+    assert "bloat" in result.output
+
+
+def test_rules_explain_case_insensitive():
+    result = runner.invoke(app, ["rules", "explain", "blot_001"])
+    assert result.exit_code == 0
+    assert "BLOT_001" in result.output
+
+
+def test_rules_explain_unknown_rule():
+    result = runner.invoke(app, ["rules", "explain", "FAKE_999"])
+    assert result.exit_code == 2

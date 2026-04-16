@@ -31,13 +31,20 @@ def _make_summary(**kwargs) -> MissionSummary:
     return MissionSummary(**defaults)
 
 
-def _make_mission(summary: MissionSummary | None = None, **kwargs) -> Mission:
+def _make_mission(
+    summary: MissionSummary | None = None,
+    triggers_detail=None,
+    script_files=None,
+    **kwargs,
+) -> Mission:
     return Mission(
         name="Test",
         source_file="test.miz",
         sha256="sha256:abc",
         theatre="Caucasus",
         summary=summary or _make_summary(),
+        triggers_detail=triggers_detail or [],
+        script_files=script_files or [],
         **kwargs,
     )
 
@@ -94,7 +101,7 @@ def test_risk_score_critical():
         findings=[ReportFinding("X", Severity.CRITICAL, "t", "d")],
     )
     assert report.risk_score() == 85
-    assert report.risk_label() == "LOW"
+    assert report.risk_label() == "MODERATE"
 
 
 def test_risk_score_clamps_to_zero():
@@ -109,10 +116,10 @@ def test_risk_score_clamps_to_zero():
 def test_risk_label_moderate():
     from afterburner.models.findings import ReportFinding
 
-    findings = [ReportFinding("X", Severity.WARNING, "t", "d")] * 10
+    findings = [ReportFinding("X", Severity.WARNING, "t", "d")] * 3
     report = Report(mission=_make_mission(), findings=findings)
-    # 100 - 50 = 50 → MODERATE (≥50, <80)
-    assert report.risk_score() == 50
+    # 100 - (3 × 8) = 76 → MODERATE (≥75, <92)
+    assert report.risk_score() == 76
     assert report.risk_label() == "MODERATE"
 
 
@@ -124,24 +131,24 @@ def test_risk_label_moderate():
 def test_blot001_no_finding_below_threshold():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=500))
+    m = _make_mission(_make_summary(active_units=300))
     assert ActiveUnitCount().check(m) == []
 
 
-def test_blot001_warning_above_600():
+def test_blot001_warning_above_350():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=700))
+    m = _make_mission(_make_summary(active_units=400))
     findings = ActiveUnitCount().check(m)
     assert len(findings) == 1
     assert findings[0].severity == Severity.WARNING
     assert findings[0].rule_id == "BLOT_001"
 
 
-def test_blot001_critical_above_1000():
+def test_blot001_critical_above_600():
     from afterburner.rules.mission_size import ActiveUnitCount
 
-    m = _make_mission(_make_summary(active_units=1200))
+    m = _make_mission(_make_summary(active_units=700))
     findings = ActiveUnitCount().check(m)
     assert findings[0].severity == Severity.CRITICAL
 
@@ -191,10 +198,10 @@ def test_blot003_no_finding_at_150():
 # ------------------------------------------------------------------
 
 
-def test_blot004_warning_above_100():
+def test_blot004_warning_above_90():
     from afterburner.rules.mission_size import ZoneCount
 
-    m = _make_mission(_make_summary(zone_count=101))
+    m = _make_mission(_make_summary(zone_count=91))
     assert ZoneCount().check(m)[0].severity == Severity.WARNING
 
 
@@ -313,3 +320,89 @@ def test_maint002_warning_on_duplicates():
     m = _make_mission(groups=groups)
     findings = DuplicateGroupNames().check(m)
     assert findings[0].severity == Severity.WARNING
+
+
+# ------------------------------------------------------------------
+# BLOT_006 — continuous triggers
+# ------------------------------------------------------------------
+
+
+def test_blot006_no_finding_below_threshold():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="MORE") for i in range(40)]
+    m = _make_mission(triggers_detail=triggers)
+    assert ContinuousTriggers().check(m) == []
+
+
+def test_blot006_warning_above_40():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="MORE") for i in range(41)]
+    m = _make_mission(triggers_detail=triggers)
+    findings = ContinuousTriggers().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].rule_id == "BLOT_006"
+
+
+def test_blot006_ignores_once_triggers():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="ONCE") for i in range(100)]
+    m = _make_mission(triggers_detail=triggers)
+    assert ContinuousTriggers().check(m) == []
+
+
+# ------------------------------------------------------------------
+# PERF_001 — CTLD detection
+# ------------------------------------------------------------------
+
+
+def test_perf001_no_finding_without_ctld():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["MIST_4_5_122.lua"])
+    assert CtldDetected().check(m) == []
+
+
+def test_perf001_warning_with_ctld():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["CTLD.lua"])
+    findings = CtldDetected().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].rule_id == "PERF_001"
+
+
+def test_perf001_case_insensitive():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["ctld_custom.lua"])
+    assert len(CtldDetected().check(m)) == 1
+
+
+# ------------------------------------------------------------------
+# PERF_002 — CSAR detection
+# ------------------------------------------------------------------
+
+
+def test_perf002_no_finding_without_csar():
+    from afterburner.rules.scripting import CsarDetected
+
+    m = _make_mission(script_files=["CTLD.lua"])
+    assert CsarDetected().check(m) == []
+
+
+def test_perf002_info_with_csar():
+    from afterburner.rules.scripting import CsarDetected
+
+    m = _make_mission(script_files=["CSAR_v2.lua"])
+    findings = CsarDetected().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.INFO
+    assert findings[0].rule_id == "PERF_002"

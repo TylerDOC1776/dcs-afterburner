@@ -48,6 +48,12 @@ class Zone:
 
 
 @dataclass
+class Trigger:
+    name: str
+    logic_type: str  # "ONCE" | "MORE"
+
+
+@dataclass
 class MissionSummary:
     theatre: str
     total_units: int
@@ -71,3 +77,5 @@ class Mission:
     groups: list[Group] = field(default_factory=list)
     statics: list[Group] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
+    triggers_detail: list[Trigger] = field(default_factory=list)
+    script_files: list[str] = field(default_factory=list)

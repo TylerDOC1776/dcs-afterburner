@@ -14,9 +14,11 @@ from afterburner.parsers.mission_parser import parse
 from afterburner.reporters.console import print_summary
 from afterburner.reporters.json_report import to_json
 from afterburner.reporters.markdown import to_markdown
-from afterburner.rules.base import run_all
+from afterburner.rules.base import get_registry, run_all
 
 app = typer.Typer(name="afterburner", add_completion=False, no_args_is_help=True)
+_rules_app = typer.Typer(name="rules", no_args_is_help=True)
+app.add_typer(_rules_app, name="rules", help="List and explain lint rules.")
 _err = Console(stderr=True)
 
 
@@ -28,6 +30,11 @@ def _root() -> None:
 @app.command()
 def analyze(
     mission: Path = typer.Argument(..., help="Path to .miz file"),
+    log_file: Path = typer.Option(
+        None,
+        "--log",
+        help="Path to DCS log file (dcs.log) to correlate with mission findings",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
     fail_on: str = typer.Option(
         "none",
@@ -49,13 +56,37 @@ def analyze(
         _err.print(f"[red]Error parsing mission:[/red] {exc}")
         raise typer.Exit(2)
 
-    findings = run_all(parsed)
-    report = Report(mission=parsed, findings=findings)
+    rule_findings = run_all(parsed)
+    log_findings = []
+    log_meta: dict | None = None
+
+    if log_file is not None:
+        if not log_file.exists():
+            _err.print(f"[red]Error:[/red] Log file not found: {log_file}")
+            raise typer.Exit(2)
+        from afterburner.log_analysis.correlator import boost_findings, correlate
+        from afterburner.log_analysis.parser import parse_log
+
+        try:
+            events = parse_log(log_file)
+        except Exception as exc:
+            _err.print(f"[red]Error reading log:[/red] {exc}")
+            raise typer.Exit(2)
+
+        log_findings = correlate(events)
+        rule_findings = boost_findings(rule_findings, log_findings)
+        log_meta = {"source": str(log_file), "events_parsed": len(events)}
+
+    report = Report(mission=parsed, findings=rule_findings + log_findings)
 
     if as_json:
-        print(json.dumps(to_json(report), indent=2))
+        data = to_json(report)
+        if log_meta:
+            data["log_source"] = log_meta["source"]
+            data["log_events_parsed"] = log_meta["events_parsed"]
+        print(json.dumps(data, indent=2))
     else:
-        print_summary(report)
+        print_summary(report, log_meta=log_meta)
 
     _check_fail_on(report, fail_on)
 
@@ -295,3 +326,81 @@ def _check_fail_on_findings(findings: list, fail_on: str) -> None:
     threshold = levels.get(fail_on.lower(), set())
     if threshold and any(f.severity in threshold for f in findings):
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# rules subcommands
+# ---------------------------------------------------------------------------
+
+_SEVERITY_COLOR = {
+    "critical": "red",
+    "warning": "yellow",
+    "info": "cyan",
+}
+
+
+@_rules_app.callback()
+def _rules_root() -> None:
+    """List and explain mission lint rules."""
+
+
+@_rules_app.command("list")
+def rules_list() -> None:
+    """List all registered lint rules."""
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    con = Console()
+    registry = get_registry()
+
+    table = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+    table.add_column("Rule ID", style="bold", min_width=10)
+    table.add_column("Severity", min_width=10)
+    table.add_column("Category", min_width=16)
+    table.add_column("Title")
+
+    for rule_cls in registry:
+        sev = rule_cls.severity.value
+        color = _SEVERITY_COLOR.get(sev, "white")
+        table.add_row(
+            rule_cls.rule_id,
+            f"[{color}]{sev}[/{color}]",
+            rule_cls.category,
+            rule_cls.title,
+        )
+
+    con.print()
+    con.print(table)
+
+
+@_rules_app.command("explain")
+def rules_explain(
+    rule_id: str = typer.Argument(..., help="Rule ID to explain (e.g. BLOT_001)"),
+) -> None:
+    """Show full detail for a specific rule."""
+    from rich.console import Console
+
+    con = Console()
+    registry = get_registry()
+    match = next((r for r in registry if r.rule_id.upper() == rule_id.upper()), None)
+
+    if match is None:
+        _err.print(f"[red]Error:[/red] Unknown rule ID: {rule_id!r}")
+        valid = ", ".join(r.rule_id for r in registry)
+        _err.print(f"Valid IDs: {valid}")
+        raise typer.Exit(2)
+
+    sev = match.severity.value
+    color = _SEVERITY_COLOR.get(sev, "white")
+
+    con.print()
+    con.print(f"[bold]{match.rule_id}[/bold] — {match.title}")
+    con.print(f"Severity:  [{color}]{sev}[/{color}]")
+    con.print(f"Category:  {match.category}")
+    con.print()
+    con.print(match.description)
+    if match.fix:
+        con.print()
+        con.print(f"[dim]Fix: {match.fix}[/dim]")
+    con.print()

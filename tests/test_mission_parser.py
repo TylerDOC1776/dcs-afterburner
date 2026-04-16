@@ -386,6 +386,101 @@ def test_json_findings_empty_no_rules(sample_miz):
 # ------------------------------------------------------------------
 
 
+# ------------------------------------------------------------------
+# Trigger detail and script file parsing
+# ------------------------------------------------------------------
+
+
+def test_triggers_detail_count(sample_miz):
+    # Existing fixture has 3 entries in conditions/actions, no logicType
+    m = parse(sample_miz)
+    assert len(m.triggers_detail) == 3
+
+
+def test_triggers_detail_default_logic_type(sample_miz):
+    # No logicType in fixture → all default to "ONCE"
+    m = parse(sample_miz)
+    assert all(t.logic_type == "ONCE" for t in m.triggers_detail)
+
+
+def test_triggers_detail_default_names(sample_miz):
+    # No triggerName in fixture → auto-named trigger_1, trigger_2, ...
+    m = parse(sample_miz)
+    assert m.triggers_detail[0].name == "trigger_1"
+    assert m.triggers_detail[2].name == "trigger_3"
+
+
+_TRIGGER_LUA = """\
+mission =
+{
+["theatre"] = "Caucasus",
+["sortie"] = "Trigger Test",
+["coalition"] = {},
+["triggers"] = {},
+["trig"] =
+{
+["conditions"] =
+{
+[1] = "return(true)",
+[2] = "return(true)",
+[3] = "return(true)",
+},
+["actions"] =
+{
+[1] = "a_do_script_file(\\"Scripts/CTLD.lua\\");",
+[2] = "a_do_script_file(\\"Scripts/CSAR_v2.lua\\");",
+[3] = "a_do_script(\\"trigger_message()\\");",
+},
+["logicType"] =
+{
+[1] = "ONCE",
+[2] = "MORE",
+[3] = "MORE",
+},
+["triggerName"] =
+{
+[1] = "INIT",
+[2] = "CSAR Loop",
+[3] = "Status Loop",
+},
+},
+}
+"""
+
+
+def test_triggers_detail_logic_types(tmp_path):
+    miz = tmp_path / "trig.miz"
+    _make_miz(miz, _TRIGGER_LUA)
+    m = parse(miz)
+    assert m.triggers_detail[0].logic_type == "ONCE"
+    assert m.triggers_detail[1].logic_type == "MORE"
+    assert m.triggers_detail[2].logic_type == "MORE"
+
+
+def test_triggers_detail_names(tmp_path):
+    miz = tmp_path / "trig.miz"
+    _make_miz(miz, _TRIGGER_LUA)
+    m = parse(miz)
+    assert m.triggers_detail[0].name == "INIT"
+    assert m.triggers_detail[1].name == "CSAR Loop"
+
+
+def test_script_files_extracted(tmp_path):
+    miz = tmp_path / "trig.miz"
+    _make_miz(miz, _TRIGGER_LUA)
+    m = parse(miz)
+    assert "CTLD.lua" in m.script_files
+    assert "CSAR_v2.lua" in m.script_files
+
+
+def test_script_files_no_inline_script(tmp_path):
+    # a_do_script (not _file) should not appear in script_files
+    miz = tmp_path / "trig.miz"
+    _make_miz(miz, _TRIGGER_LUA)
+    m = parse(miz)
+    assert len(m.script_files) == 2
+
+
 def test_empty_coalitions(tmp_path):
     lua = """\
 mission =

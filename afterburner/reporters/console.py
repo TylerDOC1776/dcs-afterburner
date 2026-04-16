@@ -11,12 +11,11 @@ from afterburner.models.report import Report
 
 _console = Console()
 
-# Thresholds matching PLANNING.md defaults
 _THRESHOLDS = {
-    "active_units": 600,
-    "total_statics": 800,
+    "active_units": 350,
+    "total_statics": 500,
     "trigger_count": 150,
-    "zone_count": 100,
+    "zone_count": 90,
     "player_slots": 80,
 }
 
@@ -27,7 +26,7 @@ _SEVERITY_STYLE = {
 }
 
 
-def print_summary(report: Report) -> None:
+def print_summary(report: Report, log_meta: dict | None = None) -> None:
     mission = report.mission
     s = mission.summary
 
@@ -39,6 +38,11 @@ def print_summary(report: Report) -> None:
         f"Theatre: [yellow]{s.theatre}[/yellow]   "
         f"Mission: [yellow]{mission.name}[/yellow]"
     )
+    if log_meta:
+        _console.print(
+            f"Log: [dim]{log_meta['source']}[/dim]  "
+            f"([dim]{log_meta['events_parsed']} events scanned[/dim])"
+        )
     _console.print()
 
     table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
@@ -67,20 +71,33 @@ def print_summary(report: Report) -> None:
     score_style = "green" if score >= 80 else "yellow" if score >= 50 else "red"
     _console.print(f"Risk score: [{score_style}]{score}/100 ({label})[/{score_style}]")
 
-    if report.findings:
+    rule_findings = [f for f in report.findings if not f.rule_id.startswith("LOG_")]
+    log_findings = [f for f in report.findings if f.rule_id.startswith("LOG_")]
+
+    if rule_findings:
         _console.print()
         _console.print("[bold]Findings:[/bold]")
-        for f in report.findings:
-            style = _SEVERITY_STYLE.get(f.severity, "white")
-            _console.print(
-                f"  [{style}]{f.severity.value.upper():8}[/{style}]  "
-                f"[bold]{f.rule_id}[/bold]  {f.title}"
-            )
-            _console.print(f"           {f.detail}")
-            if f.fix:
-                _console.print(f"           [dim]Fix: {f.fix}[/dim]")
+        for f in rule_findings:
+            _print_finding(f)
+
+    if log_findings:
+        _console.print()
+        _console.print("[bold]Log Findings:[/bold]")
+        for f in log_findings:
+            _print_finding(f)
 
     _console.print()
+
+
+def _print_finding(f) -> None:
+    style = _SEVERITY_STYLE.get(f.severity, "white")
+    _console.print(
+        f"  [{style}]{f.severity.value.upper():8}[/{style}]  "
+        f"[bold]{f.rule_id}[/bold]  {f.title}"
+    )
+    _console.print(f"           {f.detail}")
+    if f.fix:
+        _console.print(f"           [dim]Fix: {f.fix}[/dim]")
 
 
 def _flag(value: int, threshold: int) -> str:

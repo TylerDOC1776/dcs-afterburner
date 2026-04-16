@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 from pathlib import Path
 
@@ -11,11 +12,19 @@ from afterburner.models.mission import (
     Group,
     Mission,
     MissionSummary,
+    Trigger,
     Unit,
     Zone,
 )
 from afterburner.parsers import lua_table
 from afterburner.utils.miz import extract
+
+# Matches getValueDictByKey("DictKey_...") — path stored in l10n dictionary
+_DICT_KEY_RE = re.compile(r'getValueDictByKey\("([^"]+)"\)')
+# Matches getValueResourceByKey("ResKey_...") — path stored in l10n/DEFAULT/mapResource
+_RES_KEY_RE = re.compile(r'getValueResourceByKey\("([^"]+)"\)')
+# Matches a bare quoted .lua path: "Scripts/CTLD.lua"
+_QUOTED_LUA_RE = re.compile(r'"([^"]+\.lua)"')
 
 
 def parse(miz_path: str | Path) -> Mission:
@@ -26,7 +35,8 @@ def parse(miz_path: str | Path) -> Mission:
         sha256 = _hash_file(miz_path)
         raw = lua_table.loads((work_dir / "mission").read_text(encoding="utf-8"))
         dictionary = _load_dictionary(work_dir)
-        return _build_mission(raw, miz_path.name, sha256, dictionary)
+        resource_map = _load_resource_map(work_dir)
+        return _build_mission(raw, miz_path.name, sha256, dictionary, resource_map)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -47,6 +57,19 @@ def _load_dictionary(work_dir: Path) -> dict[str, str]:
     return {}
 
 
+def _load_resource_map(work_dir: Path) -> dict[str, str]:
+    """Load l10n/DEFAULT/mapResource for resolving ResKey_* file references."""
+    candidate = work_dir / "l10n" / "DEFAULT" / "mapResource"
+    if candidate.exists():
+        try:
+            raw = lua_table.loads(candidate.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return {k: str(v) for k, v in raw.items() if isinstance(v, str)}
+        except Exception:
+            pass
+    return {}
+
+
 # ------------------------------------------------------------------
 # Internals
 # ------------------------------------------------------------------
@@ -59,7 +82,11 @@ def _hash_file(path: Path) -> str:
 
 
 def _build_mission(
-    raw: dict, filename: str, sha256: str, dictionary: dict[str, str] | None = None
+    raw: dict,
+    filename: str,
+    sha256: str,
+    dictionary: dict[str, str] | None = None,
+    resource_map: dict[str, str] | None = None,
 ) -> Mission:
     theatre = str(raw.get("theatre", "unknown"))
     sortie_raw = str(raw.get("sortie", ""))
@@ -82,7 +109,11 @@ def _build_mission(
             _extract_groups(country, side, groups, statics)
 
     zones = _extract_zones(raw.get("triggers", {}))
-    trigger_count = _count_triggers(raw.get("trig", {}))
+    trig_raw = raw.get("trig", {})
+    trigger_count = _count_triggers(trig_raw)
+    triggers_detail, script_files = _parse_triggers_detail(
+        trig_raw, dictionary or {}, resource_map or {}
+    )
 
     all_units = [u for g in groups for u in g.units]
     active_units = [u for u in all_units if not u.late_activation]
@@ -111,6 +142,8 @@ def _build_mission(
         groups=groups,
         statics=statics,
         zones=zones,
+        triggers_detail=triggers_detail,
+        script_files=script_files,
     )
 
 
@@ -199,3 +232,61 @@ def _count_triggers(trig: dict) -> int:
         if isinstance(val, dict) and val:
             return len(val)
     return 0
+
+
+def _to_lua_list(val) -> list:
+    """Normalise a Lua parallel-array value (list or int-keyed dict) to a list."""
+    if isinstance(val, list):
+        return val
+    if isinstance(val, dict) and val:
+        return [val[k] for k in sorted(val.keys())]
+    return []
+
+
+def _parse_triggers_detail(
+    trig: dict, dictionary: dict[str, str], resource_map: dict[str, str]
+) -> tuple[list[Trigger], list[str]]:
+    """Parse the trig parallel-array table into Trigger objects and script file refs.
+
+    Returns (triggers, script_files) where script_files is a sorted list of
+    unique .lua filenames detected in DO SCRIPT FILE trigger actions.
+    """
+    actions = _to_lua_list(trig.get("actions", []))
+    logic_types = _to_lua_list(trig.get("logicType", []))
+    names = _to_lua_list(trig.get("triggerName", []))
+
+    count = max(len(actions), len(logic_types), len(names), _count_triggers(trig))
+
+    triggers: list[Trigger] = []
+    script_files: set[str] = set()
+
+    for i in range(count):
+        action_str = str(actions[i]) if i < len(actions) else ""
+        logic_type = str(logic_types[i]) if i < len(logic_types) else "ONCE"
+        name = str(names[i]) if i < len(names) else f"trigger_{i + 1}"
+
+        # Extract script file references — search the full action string directly.
+        # Note: do NOT try to capture the argument to a_do_script_file() with a
+        # regex, because the argument often contains nested parens like
+        # getValueResourceByKey("ResKey_...") which break [^)]+ capture groups.
+        if "a_do_script_file(" in action_str:
+            # ResKey → mapResource (modern DCS — scripts embedded in .miz)
+            for res_match in _RES_KEY_RE.finditer(action_str):
+                filename = resource_map.get(res_match.group(1), "")
+                if filename.lower().endswith(".lua"):
+                    script_files.add(Path(filename).name)
+            # DictKey → l10n dictionary (older DCS)
+            for dict_match in _DICT_KEY_RE.finditer(action_str):
+                resolved = dictionary.get(dict_match.group(1), "")
+                if resolved.lower().endswith(".lua"):
+                    script_files.add(Path(resolved).name)
+            # Bare quoted path — only if no key-based reference found
+            if not _RES_KEY_RE.search(action_str) and not _DICT_KEY_RE.search(
+                action_str
+            ):
+                for path_match in _QUOTED_LUA_RE.finditer(action_str):
+                    script_files.add(Path(path_match.group(1)).name)
+
+        triggers.append(Trigger(name=name, logic_type=logic_type))
+
+    return triggers, sorted(script_files)
