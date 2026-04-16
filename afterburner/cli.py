@@ -30,6 +30,11 @@ def _root() -> None:
 @app.command()
 def analyze(
     mission: Path = typer.Argument(..., help="Path to .miz file"),
+    log_file: Path = typer.Option(
+        None,
+        "--log",
+        help="Path to DCS log file (dcs.log) to correlate with mission findings",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
     fail_on: str = typer.Option(
         "none",
@@ -51,13 +56,37 @@ def analyze(
         _err.print(f"[red]Error parsing mission:[/red] {exc}")
         raise typer.Exit(2)
 
-    findings = run_all(parsed)
-    report = Report(mission=parsed, findings=findings)
+    rule_findings = run_all(parsed)
+    log_findings = []
+    log_meta: dict | None = None
+
+    if log_file is not None:
+        if not log_file.exists():
+            _err.print(f"[red]Error:[/red] Log file not found: {log_file}")
+            raise typer.Exit(2)
+        from afterburner.log_analysis.correlator import boost_findings, correlate
+        from afterburner.log_analysis.parser import parse_log
+
+        try:
+            events = parse_log(log_file)
+        except Exception as exc:
+            _err.print(f"[red]Error reading log:[/red] {exc}")
+            raise typer.Exit(2)
+
+        log_findings = correlate(events)
+        rule_findings = boost_findings(rule_findings, log_findings)
+        log_meta = {"source": str(log_file), "events_parsed": len(events)}
+
+    report = Report(mission=parsed, findings=rule_findings + log_findings)
 
     if as_json:
-        print(json.dumps(to_json(report), indent=2))
+        data = to_json(report)
+        if log_meta:
+            data["log_source"] = log_meta["source"]
+            data["log_events_parsed"] = log_meta["events_parsed"]
+        print(json.dumps(data, indent=2))
     else:
-        print_summary(report)
+        print_summary(report, log_meta=log_meta)
 
     _check_fail_on(report, fail_on)
 

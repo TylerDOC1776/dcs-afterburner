@@ -191,10 +191,10 @@ def test_blot003_no_finding_at_150():
 # ------------------------------------------------------------------
 
 
-def test_blot004_warning_above_75():
+def test_blot004_warning_above_90():
     from afterburner.rules.mission_size import ZoneCount
 
-    m = _make_mission(_make_summary(zone_count=76))
+    m = _make_mission(_make_summary(zone_count=91))
     assert ZoneCount().check(m)[0].severity == Severity.WARNING
 
 

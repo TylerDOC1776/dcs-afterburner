@@ -95,6 +95,54 @@ def test_analyze_console_output(tmp_path):
     assert "CLI Test" in result.output
 
 
+def test_analyze_with_clean_log(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text("2026-04-12 23:55:01.939 INFO    EDCORE (Main): DCS started\n")
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log)])
+    assert result.exit_code == 0
+    assert "events scanned" in result.output
+    assert "Log Findings" not in result.output
+
+
+def test_analyze_with_finding_log(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text(
+        "2026-04-12 23:55:01.939 WARNING EDCORE (Main): Severe precision loss\n"
+        "2026-04-12 23:55:02.000 ERROR   EDCORE (Main): Failed assert fabsf\n"
+    )
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log)])
+    assert result.exit_code == 0
+    assert "Log Findings" in result.output
+    assert "LOG_001" in result.output
+
+
+def test_analyze_with_log_json(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text(
+        "2026-04-12 23:55:01.939 WARNING EDCORE (Main): Severe precision loss\n"
+        "2026-04-12 23:55:02.000 ERROR   EDCORE (Main): Failed assert fabsf\n"
+    )
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(log), "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "log_source" in data
+    assert "log_events_parsed" in data
+    assert any(f["rule_id"] == "LOG_001" for f in data["findings"])
+
+
+def test_analyze_log_missing_file(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    result = runner.invoke(app, ["analyze", str(miz), "--log", str(tmp_path / "nope.log")])
+    assert result.exit_code == 2
+
+
 def test_analyze_json_output(tmp_path):
     miz = tmp_path / "test.miz"
     _make_miz(miz)

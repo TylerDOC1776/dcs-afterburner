@@ -155,7 +155,7 @@ class ZoneCount(Rule):
     title = "Trigger zone count"
     severity = Severity.WARNING
     description = (
-        "Counts all trigger zones in the mission. Fires a warning above 75. "
+        "Counts all trigger zones in the mission. Fires a warning above 90. "
         "Zones used in trigger conditions are checked every frame. "
         "A high zone count combined with many triggers multiplies the per-frame cost."
     )
@@ -164,13 +164,13 @@ class ZoneCount(Rule):
 
     def check(self, mission: Mission) -> list[ReportFinding]:
         n = mission.summary.zone_count
-        if n > 75:
+        if n > 90:
             return [
                 ReportFinding(
                     rule_id=self.rule_id,
                     severity=Severity.WARNING,
                     title="High trigger zone count",
-                    detail=f"{n} trigger zones (threshold: 75). "
+                    detail=f"{n} trigger zones (threshold: 90). "
                     "Zones used in triggers are evaluated every frame.",
                     fix="Remove unused zones or merge overlapping zones.",
                 )
