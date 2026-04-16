@@ -28,12 +28,15 @@ def extract(miz_path: str | Path, dest_dir: str | Path | None = None) -> Path:
         dest = Path(dest_dir)
         dest.mkdir(parents=True, exist_ok=True)
 
+    dest_resolved = dest.resolve()
     with zipfile.ZipFile(miz_path, "r") as zf:
         for entry in zf.infolist():
             # Skip any directory entries (shouldn't exist but be safe)
             if entry.filename.endswith("/"):
                 continue
-            out_path = dest / entry.filename
+            out_path = (dest / entry.filename).resolve()
+            if not out_path.is_relative_to(dest_resolved):
+                raise ValueError(f"Path traversal attempt in archive: {entry.filename}")
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_bytes(zf.read(entry.filename))
 

@@ -648,7 +648,8 @@ function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function renderResults(d) {
@@ -676,7 +677,7 @@ function renderResults(d) {
     : sorted.map(f => `
         <div class="finding">
           <div class="f-header">
-            <span class="f-sev ${f.severity}">${f.severity.toUpperCase()}</span>
+            <span class="f-sev ${esc(f.severity)}">${esc(f.severity).toUpperCase()}</span>
             <span class="f-id">${esc(f.rule_id)}</span>
             <span class="f-title">${esc(f.title)}</span>
           </div>
