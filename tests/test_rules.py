@@ -31,13 +31,20 @@ def _make_summary(**kwargs) -> MissionSummary:
     return MissionSummary(**defaults)
 
 
-def _make_mission(summary: MissionSummary | None = None, **kwargs) -> Mission:
+def _make_mission(
+    summary: MissionSummary | None = None,
+    triggers_detail=None,
+    script_files=None,
+    **kwargs,
+) -> Mission:
     return Mission(
         name="Test",
         source_file="test.miz",
         sha256="sha256:abc",
         theatre="Caucasus",
         summary=summary or _make_summary(),
+        triggers_detail=triggers_detail or [],
+        script_files=script_files or [],
         **kwargs,
     )
 
@@ -313,3 +320,89 @@ def test_maint002_warning_on_duplicates():
     m = _make_mission(groups=groups)
     findings = DuplicateGroupNames().check(m)
     assert findings[0].severity == Severity.WARNING
+
+
+# ------------------------------------------------------------------
+# BLOT_006 — continuous triggers
+# ------------------------------------------------------------------
+
+
+def test_blot006_no_finding_below_threshold():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="MORE") for i in range(40)]
+    m = _make_mission(triggers_detail=triggers)
+    assert ContinuousTriggers().check(m) == []
+
+
+def test_blot006_warning_above_40():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="MORE") for i in range(41)]
+    m = _make_mission(triggers_detail=triggers)
+    findings = ContinuousTriggers().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].rule_id == "BLOT_006"
+
+
+def test_blot006_ignores_once_triggers():
+    from afterburner.models.mission import Trigger
+    from afterburner.rules.triggers import ContinuousTriggers
+
+    triggers = [Trigger(name=f"t{i}", logic_type="ONCE") for i in range(100)]
+    m = _make_mission(triggers_detail=triggers)
+    assert ContinuousTriggers().check(m) == []
+
+
+# ------------------------------------------------------------------
+# PERF_001 — CTLD detection
+# ------------------------------------------------------------------
+
+
+def test_perf001_no_finding_without_ctld():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["MIST_4_5_122.lua"])
+    assert CtldDetected().check(m) == []
+
+
+def test_perf001_warning_with_ctld():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["CTLD.lua"])
+    findings = CtldDetected().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].rule_id == "PERF_001"
+
+
+def test_perf001_case_insensitive():
+    from afterburner.rules.scripting import CtldDetected
+
+    m = _make_mission(script_files=["ctld_custom.lua"])
+    assert len(CtldDetected().check(m)) == 1
+
+
+# ------------------------------------------------------------------
+# PERF_002 — CSAR detection
+# ------------------------------------------------------------------
+
+
+def test_perf002_no_finding_without_csar():
+    from afterburner.rules.scripting import CsarDetected
+
+    m = _make_mission(script_files=["CTLD.lua"])
+    assert CsarDetected().check(m) == []
+
+
+def test_perf002_info_with_csar():
+    from afterburner.rules.scripting import CsarDetected
+
+    m = _make_mission(script_files=["CSAR_v2.lua"])
+    findings = CsarDetected().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.INFO
+    assert findings[0].rule_id == "PERF_002"
