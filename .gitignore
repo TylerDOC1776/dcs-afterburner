@@ -13,6 +13,8 @@ parts/
 var/
 sdist/
 wheels/
+!docs/wheels/
+!docs/wheels/*.whl
 *.spec
 pip-log.txt
 pip-delete-this-directory.txt
