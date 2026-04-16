@@ -139,3 +139,172 @@ def test_no_args_shows_help():
     result = runner.invoke(app, [])
     # no_args_is_help=True — shows usage/help regardless of exit code
     assert "analyze" in result.output
+
+
+def test_analyze_corrupt_miz(tmp_path):
+    miz = tmp_path / "bad.miz"
+    miz.write_bytes(b"this is not a zip file")
+    result = runner.invoke(app, ["analyze", str(miz)])
+    assert result.exit_code == 2
+
+
+def test_analyze_fail_on_warning_exits_nonzero(tmp_path):
+    """--fail-on warning should exit 1 when a warning-level finding is present."""
+    import zipfile
+
+    # Build a mission with enough active units to trigger BLOT_001 warning (>600)
+    mission_lua = """\
+mission =
+{
+["theatre"] =
+"Caucasus",
+["sortie"] =
+"Big Mission",
+["coalition"] =
+{
+["blue"] =
+{
+["country"] =
+{
+[1] =
+{
+["id"] = 2,
+["name"] = "USA",
+["plane"] =
+{
+["group"] =
+{
+"""
+    # Add 650 units across groups to exceed the active unit threshold
+    for i in range(1, 66):
+        units = ""
+        for j in range(1, 11):
+            uid = (i - 1) * 10 + j
+            units += f"""
+[{j}] =
+{{
+["unitId"] = {uid},
+["name"] = "Unit{uid}",
+["type"] = "F-16C_50",
+["skill"] = "High",
+["x"] = {float(uid)},
+["y"] = {float(uid)},
+}},
+"""
+        mission_lua += f"""
+[{i}] =
+{{
+["groupId"] = {i},
+["name"] = "Group{i}",
+["lateActivation"] = false,
+["uncontrolled"] = false,
+["units"] =
+{{
+{units}
+}},
+}},
+"""
+    mission_lua += """
+},
+},
+},
+},
+},
+},
+["triggers"] = {},
+["trig"] = {},
+}
+"""
+    miz = tmp_path / "big.miz"
+    with zipfile.ZipFile(miz, "w") as zf:
+        zf.writestr("mission", mission_lua)
+        zf.writestr("options", "options =\n{\n}\n")
+        zf.writestr("dictionary", "dictionary =\n{\n}\n")
+        zf.writestr("l10n/DEFAULT/dictionary", "dictionary =\n{\n}\n")
+
+    result = runner.invoke(app, ["analyze", str(miz), "--fail-on", "warning"])
+    assert result.exit_code == 1
+
+
+def test_analyze_fail_on_none_always_zero(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    result = runner.invoke(app, ["analyze", str(miz), "--fail-on", "none"])
+    assert result.exit_code == 0
+
+
+# ------------------------------------------------------------------
+# report command
+# ------------------------------------------------------------------
+
+
+def test_report_missing_file(tmp_path):
+    result = runner.invoke(app, ["report", str(tmp_path / "nope.miz")])
+    assert result.exit_code == 2
+
+
+def test_report_wrong_extension(tmp_path):
+    f = tmp_path / "mission.txt"
+    f.write_text("not a miz")
+    result = runner.invoke(app, ["report", str(f)])
+    assert result.exit_code == 2
+
+
+def test_report_markdown_output(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    result = runner.invoke(app, ["report", str(miz), "--format", "md"])
+    assert result.exit_code == 0
+    assert "# DCS Afterburner Report" in result.output
+    assert "## Mission Summary" in result.output
+
+
+def test_report_unknown_format(tmp_path):
+    miz = tmp_path / "test.miz"
+    _make_miz(miz)
+    result = runner.invoke(app, ["report", str(miz), "--format", "html"])
+    assert result.exit_code == 2
+
+
+def test_report_corrupt_miz(tmp_path):
+    miz = tmp_path / "bad.miz"
+    miz.write_bytes(b"not a zip")
+    result = runner.invoke(app, ["report", str(miz)])
+    assert result.exit_code == 2
+
+
+# ------------------------------------------------------------------
+# optimize error paths
+# ------------------------------------------------------------------
+
+
+def test_optimize_missing_file(tmp_path):
+    result = runner.invoke(
+        app, ["optimize", str(tmp_path / "nope.miz"), "--safe"]
+    )
+    assert result.exit_code == 2
+
+
+def test_optimize_wrong_extension(tmp_path):
+    f = tmp_path / "mission.txt"
+    f.write_text("not a miz")
+    result = runner.invoke(app, ["optimize", str(f), "--safe"])
+    assert result.exit_code == 2
+
+
+def test_optimize_output_already_exists(tmp_path):
+    miz = tmp_path / "mission.miz"
+    _make_miz(miz)
+    out = tmp_path / "mission.optimized.miz"
+    out.write_bytes(b"already here")
+    result = runner.invoke(app, ["optimize", str(miz), "--safe"])
+    assert result.exit_code == 2
+
+
+def test_optimize_rejects_same_output_path(tmp_path):
+    miz = tmp_path / "mission.miz"
+    _make_miz(miz)
+    result = runner.invoke(
+        app, ["optimize", str(miz), "--safe", "--output", str(miz)]
+    )
+    assert result.exit_code == 2
