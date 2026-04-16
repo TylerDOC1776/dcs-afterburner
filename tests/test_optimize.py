@@ -302,6 +302,15 @@ def test_cli_optimize_json_output(tmp_path):
         assert key in data
 
 
+def test_engine_rejects_existing_backup(tmp_path):
+    src = tmp_path / "mission.miz"
+    _make_miz(src)
+    backup = tmp_path / "mission.miz.bak"
+    backup.write_bytes(b"old backup")
+    with pytest.raises(FileExistsError, match="Backup already exists"):
+        run_safe_optimizations(src)
+
+
 def test_cli_optimize_missing_file(tmp_path):
     from typer.testing import CliRunner
 

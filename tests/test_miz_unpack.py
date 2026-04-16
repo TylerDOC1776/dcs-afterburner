@@ -130,6 +130,16 @@ def test_miz_editor_cleans_up_on_success(tmp_path):
     assert not captured_work_dir.exists()
 
 
+def test_extract_rejects_path_traversal(tmp_path):
+    miz = tmp_path / "evil.miz"
+    with zipfile.ZipFile(miz, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mission", _MISSION.decode())
+        zf.writestr("../../escape.txt", "pwned")
+    dest = tmp_path / "out"
+    with pytest.raises(ValueError, match="Path traversal"):
+        extract(miz, dest)
+
+
 def test_miz_editor_cleans_up_on_exception(tmp_path):
     miz = tmp_path / "test.miz"
     _make_miz(miz)

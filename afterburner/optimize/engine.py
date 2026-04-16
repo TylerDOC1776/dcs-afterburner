@@ -59,6 +59,10 @@ def run_safe_optimizations(
 
     # Create backup before touching anything
     backup = miz_path.with_suffix(".miz.bak")
+    if backup.exists():
+        raise FileExistsError(
+            f"Backup already exists: {backup}. Remove it before optimizing again."
+        )
     shutil.copy2(miz_path, backup)
 
     bytes_before = miz_path.stat().st_size
