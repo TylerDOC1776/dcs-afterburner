@@ -21,12 +21,12 @@ from __future__ import annotations
 
 from afterburner.log_analysis.parser import LogEvent
 from afterburner.log_analysis.patterns import (
+    _LOG_001_ASSERT,
     ALL_PATTERNS,
     LOG_001,
-    _LOG_001_ASSERT,
     LogPattern,
 )
-from afterburner.models.findings import ReportFinding, Severity
+from afterburner.models.findings import ReportFinding
 
 # Maps log rule_id → rule_ids whose confidence should be boosted when the log
 # pattern fires.  Extend as correlations are discovered.

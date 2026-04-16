@@ -216,7 +216,7 @@ def logs(
 
     from afterburner.log_analysis.correlator import correlate
     from afterburner.log_analysis.parser import parse_log
-    from afterburner.models.findings import ReportFinding, Severity
+    from afterburner.models.findings import Severity
 
     try:
         events = parse_log(log_file)
