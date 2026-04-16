@@ -2,6 +2,8 @@
 
 # DCS-Afterburner
 
+![Pre-release](https://img.shields.io/badge/status-pre--release-orange)
+
 A mission linting, diagnostics, and safe optimization toolkit for DCS World `.miz` files.
 
 **[Browser-based mission analyzer →](https://tylerdoc1776.github.io/dcs-afterburner/)** — drop a `.miz` (and optional `dcs.log`) directly in your browser. No install required, nothing uploaded.
