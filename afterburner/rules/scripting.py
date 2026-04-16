@@ -11,9 +11,7 @@ _CSAR_NAMES = {"csar"}
 
 
 def _matches(script_files: list[str], keywords: set[str]) -> bool:
-    return any(
-        any(kw in f.lower() for kw in keywords) for f in script_files
-    )
+    return any(any(kw in f.lower() for kw in keywords) for f in script_files)
 
 
 @register

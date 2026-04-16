@@ -281,7 +281,9 @@ def _parse_triggers_detail(
                 if resolved.lower().endswith(".lua"):
                     script_files.add(Path(resolved).name)
             # Bare quoted path — only if no key-based reference found
-            if not _RES_KEY_RE.search(action_str) and not _DICT_KEY_RE.search(action_str):
+            if not _RES_KEY_RE.search(action_str) and not _DICT_KEY_RE.search(
+                action_str
+            ):
                 for path_match in _QUOTED_LUA_RE.finditer(action_str):
                     script_files.add(Path(path_match.group(1)).name)
 
