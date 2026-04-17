@@ -17,20 +17,52 @@ Analyze missions before deployment, catch common performance killers, compare ve
 DCS `.miz` files are ZIP archives containing Lua-based mission configuration. Afterburner unpacks them, inspects the contents, and runs heuristic checks against known performance and stability patterns.
 
 ```
-Mission: operation_iron_rain.miz
-Severity: 3 critical  8 warnings  11 info
+$ afterburner analyze operation_iron_rain.miz
 
-Critical:
-  - 426 active ground units at mission start in 4 dense clusters
-  - 187 polling triggers detected
-  - 9.4 MB embedded script payload
+ Theatre            Caucasus
+ Total units            2 104
+   Active at start        648
+   Late activation      1 456
+ Player slots              32
+ Groups (total)           312
+   Active groups          174
+ Static objects           823
+ Triggers                 168
+ Trigger zones            124
 
-Warnings:
-  - 74 unnamed groups
-  - 33 duplicate sound assets
-  - 18 high-complexity routes
+Risk score: 34/100 — CRITICAL
 
-Risk Score: HIGH
+  CRITICAL  BLOT_001  Extreme active unit count
+            648 units active at mission start (threshold: 600). Severe performance
+            risk on multiplayer servers.
+            Fix: Move non-essential groups to late activation.
+
+  CRITICAL  BLOT_002  Extreme static object count
+            823 static objects (threshold: 800). Static objects are rendered and
+            simulated regardless of player proximity.
+            Fix: Remove decorative statics far from the action area.
+
+  WARNING   BLOT_003  High trigger count
+            168 triggers (threshold: 150). Trigger evaluation runs every server frame.
+            Fix: Consolidate redundant triggers or convert to script-driven logic.
+
+  WARNING   BLOT_004  High trigger zone count
+            124 trigger zones (threshold: 90). Active zones are evaluated every frame.
+            Fix: Remove unused zones or merge overlapping zones with identical radii.
+
+  WARNING   BLOT_008  Very high total unit count
+            2104 total units (threshold: 1200). Late-activated units still consume
+            server memory.
+            Fix: Audit late-activation groups and remove units unused by the mission.
+
+  WARNING   PERF_001  CTLD script detected
+            CTLD detected in mission scripts. Polling loops run every 1–2s over all
+            registered transport pilots regardless of player count.
+            Fix: Reduce registered pilot names or use an event-driven CTLD build.
+
+  INFO      MAINT_001  Missing mission description
+            Sortie name is blank. Add a description in the mission editor for easier
+            server-side identification.
 ```
 
 ---
@@ -163,12 +195,12 @@ output:
 
 Each mission receives a score based on weighted findings:
 
-| Score | Rating |
-|-------|--------|
-| 90–100 | Clean |
-| 75–89 | Acceptable |
-| 50–74 | Caution |
-| < 50 | Performance / stability risk |
+| Score | Band |
+|-------|------|
+| 92–100 | LOW |
+| 75–91 | MODERATE |
+| 50–74 | HIGH |
+| < 50 | CRITICAL |
 
 Scores are always accompanied by an explanation. A score without reasons is not output.
 
