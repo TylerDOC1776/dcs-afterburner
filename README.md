@@ -16,51 +16,51 @@ Analyze missions before deployment, catch common performance killers, compare ve
 
 DCS `.miz` files are ZIP archives containing Lua-based mission configuration. Afterburner unpacks them, inspects the contents, and runs heuristic checks against known performance and stability patterns.
 
-```ansi
-[32m$[0m [1m[34mafterburner[0m [36manalyze[0m [33moperation_iron_rain.miz[0m
+```
+$ afterburner analyze operation_iron_rain.miz
 
-[90m Theatre           [0m Caucasus
-[90m Total units       [0m     2 104
-[90m   Active at start [0m       648
-[90m   Late activation [0m     1 456
-[90m Player slots      [0m        32
-[90m Groups (total)    [0m       312
-[90m   Active groups   [0m       174
-[90m Static objects    [0m       823
-[90m Triggers          [0m       168
-[90m Trigger zones     [0m       124
+ Theatre            Caucasus
+ Total units            2 104
+   Active at start        648
+   Late activation      1 456
+ Player slots              32
+ Groups (total)           312
+   Active groups          174
+ Static objects           823
+ Triggers                 168
+ Trigger zones            124
 
-[90mRisk score:[0m [1;31m34/100 — CRITICAL[0m
+Risk score: 34/100 — CRITICAL
 
-  [1;31mCRITICAL[0m  [90mBLOT_001[0m  Extreme active unit count
+  CRITICAL  BLOT_001  Extreme active unit count
             648 units active at mission start (threshold: 600). Severe performance
             risk on multiplayer servers.
-            [32mFix:[0m Move non-essential groups to late activation.
+            Fix: Move non-essential groups to late activation.
 
-  [1;31mCRITICAL[0m  [90mBLOT_002[0m  Extreme static object count
+  CRITICAL  BLOT_002  Extreme static object count
             823 static objects (threshold: 800). Static objects are rendered and
             simulated regardless of player proximity.
-            [32mFix:[0m Remove decorative statics far from the action area.
+            Fix: Remove decorative statics far from the action area.
 
-  [1;33mWARNING[0m   [90mBLOT_003[0m  High trigger count
+  WARNING   BLOT_003  High trigger count
             168 triggers (threshold: 150). Trigger evaluation runs every server frame.
-            [32mFix:[0m Consolidate redundant triggers or convert to script-driven logic.
+            Fix: Consolidate redundant triggers or convert to script-driven logic.
 
-  [1;33mWARNING[0m   [90mBLOT_004[0m  High trigger zone count
+  WARNING   BLOT_004  High trigger zone count
             124 trigger zones (threshold: 90). Active zones are evaluated every frame.
-            [32mFix:[0m Remove unused zones or merge overlapping zones with identical radii.
+            Fix: Remove unused zones or merge overlapping zones with identical radii.
 
-  [1;33mWARNING[0m   [90mBLOT_008[0m  Very high total unit count
+  WARNING   BLOT_008  Very high total unit count
             2104 total units (threshold: 1200). Late-activated units still consume
             server memory.
-            [32mFix:[0m Audit late-activation groups and remove units unused by the mission.
+            Fix: Audit late-activation groups and remove units unused by the mission.
 
-  [1;33mWARNING[0m   [90mPERF_001[0m  CTLD script detected
+  WARNING   PERF_001  CTLD script detected
             CTLD detected in mission scripts. Polling loops run every 1–2s over all
             registered transport pilots regardless of player count.
-            [32mFix:[0m Reduce registered pilot names or use an event-driven CTLD build.
+            Fix: Reduce registered pilot names or use an event-driven CTLD build.
 
-  [1;34mINFO[0m      [90mMAINT_001[0m  Missing mission description
+  INFO      MAINT_001  Missing mission description
             Sortie name is blank. Add a description in the mission editor for easier
             server-side identification.
 ```
