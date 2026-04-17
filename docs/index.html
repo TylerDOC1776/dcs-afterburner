@@ -439,6 +439,82 @@
       border-color: var(--accent);
       color: var(--accent);
     }
+
+    /* ── Optimize button ── */
+    #optimize-btn {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      padding: 13px;
+      background: transparent;
+      border: 1px solid var(--info);
+      color: var(--info);
+      font-family: inherit;
+      font-size: 14px;
+      letter-spacing: 5px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background 0.15s;
+    }
+
+    #optimize-btn:hover:not(:disabled) { background: rgba(34,170,255,0.07); }
+
+    #optimize-btn:disabled {
+      border-color: var(--border);
+      color: var(--text-dim);
+      cursor: not-allowed;
+    }
+
+    /* ── Optimize results ── */
+    .opt-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      margin-top: 36px;
+    }
+
+    .opt-head {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .opt-bytes {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .opt-stat {
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+    }
+
+    .opt-stat span { color: var(--text-hi); }
+    .opt-stat.saved span { color: var(--accent); }
+
+    .opt-change {
+      font-size: 11px;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .opt-change:last-child { border-bottom: none; }
+    .opt-id { color: var(--text-dim); margin-right: 8px; letter-spacing: 1px; }
+    .opt-skipped { color: var(--text-dim); }
+
+    .opt-dl {
+      margin-top: 14px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -479,6 +555,7 @@
   </div>
 
   <button id="analyze-btn" disabled>[ ANALYZE MISSION ]</button>
+  <button id="optimize-btn" disabled>[ OPTIMIZE (SAFE) ]</button>
 
   <div id="progress">
     <div class="prog-label" id="prog-txt">LOADING ANALYSIS ENGINE</div>
@@ -507,11 +584,12 @@ let logFile     = null;
 // ── DOM ──────────────────────────────────────────────────────────────────────
 const dot        = document.getElementById('dot');
 const statusTxt  = document.getElementById('status-txt');
-const analyzeBtn = document.getElementById('analyze-btn');
-const progDiv    = document.getElementById('progress');
-const progTxt    = document.getElementById('prog-txt');
-const progFill   = document.getElementById('prog-fill');
-const resultsDiv = document.getElementById('results');
+const analyzeBtn  = document.getElementById('analyze-btn');
+const optimizeBtn = document.getElementById('optimize-btn');
+const progDiv     = document.getElementById('progress');
+const progTxt     = document.getElementById('prog-txt');
+const progFill    = document.getElementById('prog-fill');
+const resultsDiv  = document.getElementById('results');
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 function setStatus(cls, msg) {
@@ -531,7 +609,8 @@ function hideProgress() {
 }
 
 function refreshBtn() {
-  analyzeBtn.disabled = !(engineReady && mizFile);
+  analyzeBtn.disabled  = !(engineReady && mizFile);
+  optimizeBtn.disabled = !(engineReady && mizFile);
 }
 
 // ── Drop zone wiring ──────────────────────────────────────────────────────────
@@ -610,6 +689,27 @@ def analyze(miz_path, log_path=None):
     except Exception as exc:
         import traceback
         return json.dumps({"ok": False, "error": str(exc), "trace": traceback.format_exc()})
+
+def optimize(miz_path):
+    try:
+        from afterburner.optimize.rewrite import repack_optimized
+        src = Path(miz_path)
+        out = Path('/tmp/mission.optimized.miz')
+        out.unlink(missing_ok=True)
+        changes = repack_optimized(src, out)
+        return json.dumps({
+            "ok": True,
+            "bytes_before": src.stat().st_size,
+            "bytes_after": out.stat().st_size,
+            "changes": [
+                {"transform_id": c.transform_id, "status": c.status,
+                 "detail": c.detail, "bytes_saved": c.bytes_saved}
+                for c in changes
+            ]
+        })
+    except Exception as exc:
+        import traceback
+        return json.dumps({"ok": False, "error": str(exc), "trace": traceback.format_exc()})
 `);
 
     showProgress('READY', 100);
@@ -666,6 +766,78 @@ analyzeBtn.addEventListener('click', async () => {
     showError('Unexpected error', String(err));
   }
 });
+
+// ── Optimize ─────────────────────────────────────────────────────────────────
+optimizeBtn.addEventListener('click', async () => {
+  if (!mizFile || !engineReady) return;
+
+  optimizeBtn.disabled = true;
+  analyzeBtn.disabled  = true;
+  resultsDiv.classList.remove('show');
+  resultsDiv.innerHTML = '';
+  showProgress('OPTIMIZING MISSION', 40);
+
+  try {
+    pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
+
+    showProgress('REPACKING', 75);
+    const raw    = await pyodide.runPythonAsync(`optimize('/tmp/mission.miz')`);
+    const result = JSON.parse(raw);
+
+    showProgress('DONE', 100);
+    setTimeout(() => {
+      hideProgress();
+      refreshBtn();
+      if (result.ok) {
+        const outBytes = pyodide.FS.readFile('/tmp/mission.optimized.miz');
+        const base = safeFilename(mizFile.name.replace(/\.miz$/i, ''));
+        triggerDownload(outBytes, base + '.optimized.miz', 'application/zip');
+        renderOptimizeResults(result, base + '.optimized.miz');
+      } else {
+        showError('Optimization failed', result.error, result.trace);
+      }
+    }, 150);
+
+  } catch (err) {
+    hideProgress();
+    refreshBtn();
+    showError('Unexpected error', String(err));
+  }
+});
+
+function renderOptimizeResults(d, filename) {
+  const saved     = d.bytes_before - d.bytes_after;
+  const savedKB   = (saved / 1024).toFixed(1);
+  const pct       = d.bytes_before > 0 ? ((saved / d.bytes_before) * 100).toFixed(1) : '0.0';
+  const applied   = d.changes.filter(c => c.status === 'applied');
+  const skipped   = d.changes.filter(c => c.status !== 'applied');
+
+  const changesHtml = [
+    ...applied.map(c => `
+      <div class="opt-change">
+        <span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}
+      </div>`),
+    ...skipped.map(c => `
+      <div class="opt-change opt-skipped">
+        <span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}
+      </div>`),
+  ].join('') || '<div class="opt-change opt-skipped">No changes applied.</div>';
+
+  resultsDiv.innerHTML = `
+    <div class="opt-panel">
+      <div class="opt-head">OPTIMIZATION COMPLETE</div>
+      <div class="opt-bytes">
+        <div class="opt-stat">BEFORE <span>${(d.bytes_before / 1024).toFixed(1)} KB</span></div>
+        <div class="opt-stat">AFTER <span>${(d.bytes_after / 1024).toFixed(1)} KB</span></div>
+        <div class="opt-stat saved">SAVED <span>${savedKB} KB (${pct}%)</span></div>
+      </div>
+      ${changesHtml}
+      <div class="opt-dl">DOWNLOADED: ${esc(filename)}</div>
+    </div>`;
+
+  resultsDiv.classList.add('show');
+  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // ── Render ────────────────────────────────────────────────────────────────────
 const SEV_ORDER = ['critical', 'warning', 'info'];
