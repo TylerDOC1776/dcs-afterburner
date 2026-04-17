@@ -3,142 +3,168 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DCS Afterburner — Mission Analyzer</title>
+  <title>DCS Afterburner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ── Catppuccin Mocha palette ── */
     :root {
-      --bg:           #050905;
-      --panel:        #0b130b;
-      --border:       #1a3d1a;
-      --border-hi:    #2d6b2d;
-      --text-dim:     #3d6e3d;
-      --text:         #6aaa6a;
-      --text-hi:      #9ed09e;
-      --accent:       #33ff55;
-      --crit:         #ff2828;
-      --warn:         #e8a020;
-      --info:         #22aaff;
+      --base:     #1e1e2e;
+      --mantle:   #181825;
+      --crust:    #11111b;
+      --surface0: #313244;
+      --surface1: #45475a;
+      --surface2: #585b70;
+      --overlay0: #6c7086;
+      --overlay1: #7f849c;
+      --text:     #cdd6f4;
+      --subtext0: #a6adc8;
+      --subtext1: #bac2de;
+      --blue:     #89b4fa;
+      --green:    #a6e3a1;
+      --red:      #f38ba8;
+      --yellow:   #f9e2af;
+      --peach:    #fab387;
+      --mauve:    #cba6f7;
+      --teal:     #94e2d5;
+      --sky:      #89dceb;
+    }
+
+    html {
+      min-height: 100%;
+      background: var(--crust);
     }
 
     body {
-      background: var(--bg);
+      font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+      font-size: 13.5px;
+      line-height: 1.5;
       color: var(--text);
-      font-family: 'Share Tech Mono', 'Courier New', monospace;
-      font-size: 14px;
-      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 24px 16px 48px;
       min-height: 100vh;
+      background: var(--crust);
     }
 
-    /* Subtle scanline overlay */
-    body::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 0, 0, 0.07) 2px,
-        rgba(0, 0, 0, 0.07) 4px
-      );
-      pointer-events: none;
-      z-index: 9999;
+    /* ── Konsole window shell ── */
+    .window {
+      width: 100%;
+      max-width: 900px;
+      border-radius: 10px;
+      overflow: visible;
+      box-shadow: 0 24px 80px rgba(0,0,0,.7);
     }
 
-    /* ── Header ── */
-    header {
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
+    /* Title bar */
+    .titlebar {
+      background: var(--mantle);
+      padding: 11px 16px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--surface0);
+      user-select: none;
+    }
+    .win-controls { display: flex; gap: 7px; }
+    .wc { width: 12px; height: 12px; border-radius: 50%; }
+    .wc-close  { background: #f38ba8; }
+    .wc-min    { background: #f9e2af; }
+    .wc-max    { background: #a6e3a1; }
+    .win-title { flex: 1; text-align: center; font-size: 12px; color: var(--overlay0); }
+
+    /* Tab bar */
+    .tabbar {
+      background: var(--mantle);
+      padding: 0 16px;
+      display: flex;
+      border-bottom: 1px solid var(--surface0);
+    }
+    .tab {
+      padding: 6px 18px;
+      font-size: 12px;
+      color: var(--overlay0);
+      border-bottom: 2px solid transparent;
+      cursor: default;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+
+    /* Terminal body */
+    .terminal {
+      background: var(--base);
+      padding: 16px 20px 28px;
+      min-height: 300px;
+      border-radius: 0 0 10px 10px;
     }
 
-    .title-block h1 {
-      font-size: 18px;
-      letter-spacing: 5px;
-      color: var(--accent);
-      text-shadow: 0 0 14px rgba(51, 255, 85, 0.35);
+    /* ── Boot sequence output ── */
+    #boot-output { margin-bottom: 16px; }
+    .boot-line { color: var(--overlay0); font-size: 12.5px; }
+    .boot-line .ok  { color: var(--green); }
+    .boot-line .err { color: var(--red); }
+    .boot-line .dim { color: var(--surface2); }
+
+    /* ── Prompt ── */
+    .prompt-row {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0;
+      margin-bottom: 4px;
     }
 
-    .title-block .sub {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-      margin-top: 2px;
+    /* Starship-style segments (no username) */
+    .ps-dir {
+      background: var(--surface0);
+      color: var(--blue);
+      padding: 1px 10px 1px 10px;
+      font-size: 12.5px;
+      font-weight: 700;
+      clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 50%, calc(100% - 7px) 100%, 0 100%);
+      padding-right: 16px;
+    }
+    .ps-git {
+      background: var(--mauve);
+      color: var(--crust);
+      padding: 1px 10px 1px 14px;
+      font-size: 12.5px;
+      font-weight: 700;
+      clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 50%, calc(100% - 7px) 100%, 7px 100%, 0 50%);
+      margin-left: -1px;
+      padding-right: 16px;
+    }
+    .ps-end {
+      color: var(--green);
+      margin-left: 8px;
+      font-size: 15px;
     }
 
-    .status-row {
+    /* ── Command-line input area ── */
+    .cmd-line {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: var(--text-dim);
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-left: 4px;
+      margin-bottom: 12px;
     }
+    .cmd-prefix { color: var(--text); white-space: nowrap; }
+    .cmd-kw     { color: var(--blue); }
+    .cmd-sub    { color: var(--teal); }
+    .cmd-flag   { color: var(--peach); white-space: nowrap; }
 
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      flex-shrink: 0;
-    }
-    .dot.busy   { background: var(--warn); animation: blink 1s ease-in-out infinite; }
-    .dot.ready  { background: var(--accent); box-shadow: 0 0 6px rgba(51,255,85,0.5); }
-    .dot.err    { background: var(--crit); }
-
-    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
-
-    /* ── Layout ── */
-    main {
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 36px 24px 48px;
-    }
-
-    .field-label {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      margin-bottom: 6px;
-    }
-
-    /* ── Drop zones ── */
-    .upload-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 18px;
-    }
-
-    @media (max-width: 560px) { .upload-row { grid-template-columns: 1fr; } }
-
-    .drop-zone {
+    /* File slots — visible drop boxes */
+    .file-slot {
       position: relative;
-      border: 1px dashed var(--border-hi);
-      padding: 24px 16px;
-      text-align: center;
+      display: inline-flex;
+      align-items: center;
       cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
     }
-
-    .drop-zone:hover, .drop-zone.over {
-      border-color: var(--accent);
-      background: rgba(51, 255, 85, 0.03);
-    }
-
-    .drop-zone.loaded {
-      border-style: solid;
-      border-color: var(--accent);
-    }
-
-    .drop-zone input {
+    .file-slot input[type="file"] {
       position: absolute;
       inset: 0;
       opacity: 0;
@@ -146,466 +172,402 @@
       width: 100%;
       height: 100%;
     }
-
-    .dz-icon  { font-size: 22px; color: var(--text-dim); margin-bottom: 6px; }
-    .loaded .dz-icon { color: var(--accent); }
-
-    .dz-main  { font-size: 12px; letter-spacing: 2px; color: var(--text); }
-    .dz-hint  { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
-    .dz-file  { font-size: 12px; color: var(--accent); margin-top: 6px; }
-
-    /* ── Analyze button ── */
-    #analyze-btn {
-      display: block;
-      width: 100%;
-      padding: 13px;
-      background: transparent;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-      font-family: inherit;
-      font-size: 14px;
-      letter-spacing: 5px;
-      cursor: pointer;
-      text-transform: uppercase;
-      text-shadow: 0 0 8px rgba(51,255,85,0.3);
-      transition: background 0.15s;
-    }
-
-    #analyze-btn:hover:not(:disabled) { background: rgba(51,255,85,0.07); }
-
-    #analyze-btn:disabled {
-      border-color: var(--border);
-      color: var(--text-dim);
-      text-shadow: none;
-      cursor: not-allowed;
-    }
-
-    /* ── Progress ── */
-    #progress {
-      display: none;
-      padding: 18px 0 4px;
-      text-align: center;
-    }
-
-    #progress.show { display: block; }
-
-    .prog-label {
-      font-size: 11px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-    }
-
-    .prog-track {
-      width: 100%;
-      height: 2px;
-      background: var(--border);
-      margin-top: 10px;
-      overflow: hidden;
-    }
-
-    .prog-fill {
-      height: 100%;
-      background: var(--accent);
-      width: 0%;
-      transition: width 0.3s ease;
-      box-shadow: 0 0 8px rgba(51,255,85,0.5);
-    }
-
-    /* ── Results ── */
-    #results {
-      display: none;
-      margin-top: 36px;
-    }
-
-    #results.show { display: block; }
-
-    /* Score + meta header */
-    .result-head {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 16px;
-      align-items: flex-start;
-    }
-
-    .score-card {
-      border: 1px solid var(--border-hi);
-      padding: 14px 18px;
-      text-align: center;
-      flex-shrink: 0;
-      min-width: 110px;
-      background: var(--panel);
-    }
-
-    .score-num {
-      font-size: 52px;
-      line-height: 1;
-      font-weight: normal;
-    }
-
-    .score-lbl {
-      font-size: 11px;
-      letter-spacing: 3px;
-      margin-top: 5px;
-    }
-
-    .score-tag {
-      font-size: 10px;
-      color: var(--text-dim);
-      letter-spacing: 2px;
-      margin-top: 4px;
-    }
-
-    /* Score band colors */
-    .band-LOW      .score-num, .band-LOW      .score-lbl { color: var(--accent); }
-    .band-MODERATE .score-num, .band-MODERATE .score-lbl { color: var(--warn); }
-    .band-HIGH     .score-num, .band-HIGH     .score-lbl { color: #ff7700; }
-    .band-CRITICAL .score-num, .band-CRITICAL .score-lbl { color: var(--crit); }
-
-    .meta-card {
-      flex: 1;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      padding: 14px 18px;
-    }
-
-    .mission-name {
-      font-size: 15px;
-      color: var(--text-hi);
-      letter-spacing: 2px;
-      margin-bottom: 12px;
-      word-break: break-all;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-      gap: 5px 20px;
-    }
-
-    .stat {
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .stat-k {
-      font-size: 11px;
-      letter-spacing: 1px;
-      color: var(--text-dim);
-    }
-
-    .stat-v {
-      font-size: 11px;
-      color: var(--text-hi);
-    }
-
-    /* Findings panel */
-    .findings-panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      padding: 16px 20px;
-    }
-
-    .findings-head {
+    .slot-inner {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 4px;
+      gap: 6px;
+      background: var(--mantle);
+      border: 1px dashed var(--surface2);
+      border-radius: 5px;
+      padding: 5px 12px;
+      transition: border-color .15s, background .15s;
+      white-space: nowrap;
+    }
+    .slot-icon { font-size: 13px; color: var(--overlay0); }
+    .file-slot:hover .slot-inner,
+    .file-slot.over  .slot-inner {
+      border-color: var(--blue);
+      background: rgba(137,180,250,.07);
+    }
+    .file-slot.over .slot-inner { border-style: solid; }
+    .file-slot.loaded .slot-inner {
+      border-style: solid;
+      border-color: var(--green);
+      background: rgba(166,227,161,.06);
     }
 
-    .findings-title {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-      flex: 1;
+    .slot-placeholder { color: var(--overlay0); font-size: 12px; }
+    .slot-value       { color: var(--yellow); font-size: 12.5px; }
+
+    /* ── Action buttons (styled as terminal key hints) ── */
+    .action-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      margin-left: 4px;
     }
-
-    .badge {
-      font-size: 10px;
-      letter-spacing: 1px;
-      padding: 1px 7px;
-      border: 1px solid;
+    .term-btn {
+      background: var(--surface0);
+      border: none;
+      color: var(--subtext1);
+      font-family: inherit;
+      font-size: 12.5px;
+      padding: 4px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background .12s, color .12s;
     }
+    .term-btn:hover:not(:disabled) { background: var(--surface1); color: var(--text); }
+    .term-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .term-btn .key  { color: var(--green); font-weight: 700; }
+    .term-btn.blue .key { color: var(--blue); }
 
-    .badge.c { color: var(--crit); border-color: var(--crit); }
-    .badge.w { color: var(--warn); border-color: var(--warn); }
-    .badge.i { color: var(--info); border-color: var(--info); }
+    /* ── Output history ── */
+    #output { }
 
-    .finding {
-      padding: 11px 0;
-      border-bottom: 1px solid var(--border);
+    /* Each "run" block */
+    .run-block { margin-bottom: 20px; }
+
+    /* The echoed command line */
+    .echoed-cmd {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
     }
+    .echoed-cmd .ps-end { margin-right: 4px; }
+    .echoed-text { color: var(--text); }
+    .echoed-arg  { color: var(--yellow); }
+    .echoed-flag { color: var(--peach); }
+    .echoed-kw   { color: var(--blue); }
+    .echoed-sub  { color: var(--teal); }
 
-    .finding:last-child { border-bottom: none; }
-
-    .f-header {
+    /* Progress line */
+    .prog-line {
+      font-size: 12.5px;
+      color: var(--subtext0);
+      margin-bottom: 2px;
+    }
+    .prog-bar-wrap {
       display: flex;
       align-items: center;
       gap: 10px;
-      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .prog-bar {
+      flex: 1;
+      height: 5px;
+      background: var(--surface0);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .prog-fill {
+      height: 100%;
+      background: var(--blue);
+      width: 0%;
+      transition: width .3s ease;
+      border-radius: 3px;
+    }
+    .prog-pct { font-size: 11.5px; color: var(--overlay0); width: 36px; text-align: right; }
+
+    /* Results output */
+    .out-divider { border: none; border-top: 1px solid var(--surface0); margin: 10px 0; }
+
+    .out-section-hd { color: var(--blue); font-weight: 700; margin: 8px 0 4px; }
+
+    .summary-block {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
     }
 
-    .f-sev {
-      font-size: 10px;
-      letter-spacing: 1px;
-      padding: 1px 6px;
-      border: 1px solid;
+    .score-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+    .score-num { font-size: 36px; font-weight: 700; line-height: 1; }
+    .score-band { font-size: 13px; font-weight: 700; }
+    .band-LOW      .score-num, .band-LOW      .score-band { color: var(--green); }
+    .band-MODERATE .score-num, .band-MODERATE .score-band { color: var(--yellow); }
+    .band-HIGH     .score-num, .band-HIGH     .score-band { color: var(--peach); }
+    .band-CRITICAL .score-num, .band-CRITICAL .score-band { color: var(--red); }
+
+    .score-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .risk-bar { flex: 1; height: 4px; background: var(--surface0); border-radius: 2px; }
+    .risk-fill { height: 100%; border-radius: 2px; }
+    .risk-fill.band-LOW      { background: var(--green); }
+    .risk-fill.band-MODERATE { background: var(--yellow); }
+    .risk-fill.band-HIGH     { background: var(--peach); }
+    .risk-fill.band-CRITICAL { background: var(--red); }
+    .risk-label { font-size: 11px; color: var(--overlay0); white-space: nowrap; }
+
+    .stat-grid { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; }
+    .stat-k { color: var(--overlay0); }
+    .stat-k::after { content: ':'; }
+    .stat-v { color: var(--text); }
+    .stat-v.warn { color: var(--peach); }
+    .stat-v.crit { color: var(--red); }
+
+    /* Collapsible sections */
+    .section-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      margin: 10px 0 6px;
+    }
+    .section-hd:hover { opacity: .85; }
+    .section-chevron {
+      color: var(--overlay0);
+      font-size: 11px;
+      transition: transform .2s ease;
       flex-shrink: 0;
     }
-
-    .f-sev.critical { color: var(--crit); border-color: var(--crit); }
-    .f-sev.warning  { color: var(--warn); border-color: var(--warn); }
-    .f-sev.info     { color: var(--info); border-color: var(--info); }
-
-    .f-id    { font-size: 10px; letter-spacing: 1px; color: var(--text-dim); flex-shrink: 0; }
-    .f-title { font-size: 13px; color: var(--text-hi); }
-
-    .f-detail {
-      font-size: 12px;
-      color: var(--text);
-      margin-top: 5px;
+    .section-hd.collapsed .section-chevron { transform: rotate(-90deg); }
+    .collapsible {
+      overflow: hidden;
+      max-height: 2000px;
+      transition: max-height .28s ease, opacity .2s ease;
+      opacity: 1;
+    }
+    .collapsible.collapsed {
+      max-height: 0;
+      opacity: 0;
     }
 
-    .f-fix {
+    /* Summary collapsible — keep score visible, collapse only stats */
+    .summary-block .score-toggle {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 8px;
+    }
+    .summary-block .score-toggle:hover { opacity: .85; }
+
+    /* Findings */
+    .findings-hd { color: var(--blue); font-weight: 700; }
+    .finding { margin-bottom: 8px; }
+    .f-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .f-sev { font-weight: 700; font-size: 12px; flex-shrink: 0; }
+    .f-sev.critical { color: var(--red); }
+    .f-sev.warning  { color: var(--yellow); }
+    .f-sev.info     { color: var(--blue); }
+    .f-id    { color: var(--overlay0); font-size: 12px; flex-shrink: 0; }
+    .f-title { color: var(--text); flex: 1; }
+    .f-detail { color: var(--subtext0); padding-left: 14px; font-size: 12.5px; }
+    .f-fix    { color: var(--green);   padding-left: 14px; font-size: 12.5px; }
+    .f-fix::before { content: '↳ '; }
+
+    /* Copy button */
+    .copy-btn {
+      margin-left: auto;
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      color: var(--overlay0);
+      font-family: inherit;
       font-size: 11px;
-      color: var(--text-dim);
-      margin-top: 4px;
+      cursor: pointer;
+      padding: 0 2px;
+      transition: color .12s;
+      align-self: center;
     }
+    .copy-btn:hover { color: var(--blue); }
+    .copy-btn.copied { color: var(--green); }
 
-    .f-fix::before { content: 'FIX \00bb  '; }
+    .clear-msg { color: var(--green); }
 
-    .clear-msg {
-      text-align: center;
-      color: var(--accent);
-      padding: 20px;
+    /* Download / optimize actions */
+    .out-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .out-action-btn {
+      background: transparent;
+      border: 1px solid var(--surface1);
+      color: var(--subtext1);
+      font-family: inherit;
       font-size: 12px;
-      letter-spacing: 3px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color .12s, color .12s;
     }
+    .out-action-btn:hover { border-color: var(--blue); color: var(--blue); }
 
     /* Error */
-    .err-box {
-      border: 1px solid var(--crit);
-      padding: 16px;
-      color: var(--crit);
-      font-size: 12px;
-      letter-spacing: 1px;
+    .err-block { color: var(--red); }
+    .err-block pre { color: var(--subtext0); font-size: 11.5px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; }
+
+    /* Opt results */
+    .opt-stat-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 8px; }
+    .opt-stat { font-size: 12.5px; color: var(--subtext0); }
+    .opt-stat span { color: var(--text); }
+    .opt-stat.saved span { color: var(--green); }
+    .opt-change { font-size: 12px; color: var(--subtext0); padding: 2px 0; }
+    .opt-change .opt-id { color: var(--overlay0); margin-right: 8px; }
+    .opt-change.skipped { opacity: .5; }
+
+    /* Cursor blink */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      background: var(--text);
+      vertical-align: -2px;
+      margin-left: 2px;
+      animation: blink .9s step-end infinite;
     }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
-    .err-box pre {
-      margin-top: 10px;
-      font-size: 10px;
-      color: var(--text);
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-
-    /* Footer note */
-    .footer-note {
-      margin-top: 40px;
-      padding-top: 16px;
-      border-top: 1px solid var(--border);
-      text-align: center;
-      font-size: 10px;
-      letter-spacing: 2px;
-      color: var(--text-dim);
-    }
-
-    .footer-note a { color: var(--text-dim); }
-    .footer-note a:hover { color: var(--text); }
-
-    /* ── Download bar ── */
-    .download-bar {
-      display: flex;
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    .dl-btn {
-      flex: 1;
-      padding: 10px;
-      background: transparent;
-      border: 1px solid var(--border-hi);
-      color: var(--text);
-      font-family: inherit;
-      font-size: 11px;
-      letter-spacing: 3px;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: border-color 0.15s, color 0.15s;
-    }
-
-    .dl-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    /* ── Optimize button ── */
-    #optimize-btn {
-      display: block;
-      width: 100%;
-      margin-top: 8px;
-      padding: 13px;
-      background: transparent;
-      border: 1px solid var(--info);
-      color: var(--info);
-      font-family: inherit;
-      font-size: 14px;
-      letter-spacing: 5px;
-      cursor: pointer;
-      text-transform: uppercase;
-      transition: background 0.15s;
-    }
-
-    #optimize-btn:hover:not(:disabled) { background: rgba(34,170,255,0.07); }
-
-    #optimize-btn:disabled {
-      border-color: var(--border);
-      color: var(--text-dim);
-      cursor: not-allowed;
-    }
-
-    /* ── Optimize results ── */
-    .opt-panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      padding: 16px 20px;
-      margin-top: 36px;
-    }
-
-    .opt-head {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--text-dim);
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 12px;
-    }
-
-    .opt-bytes {
-      display: flex;
-      gap: 28px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-
-    .opt-stat {
-      font-size: 11px;
-      letter-spacing: 1px;
-      color: var(--text-dim);
-    }
-
-    .opt-stat span { color: var(--text-hi); }
-    .opt-stat.saved span { color: var(--accent); }
-
-    .opt-change {
-      font-size: 11px;
-      padding: 5px 0;
-      border-bottom: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    .opt-change:last-child { border-bottom: none; }
-    .opt-id { color: var(--text-dim); margin-right: 8px; letter-spacing: 1px; }
-    .opt-skipped { color: var(--text-dim); }
-
-    .opt-dl {
+    /* Footer */
+    .footer {
       margin-top: 14px;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: var(--accent);
+      font-size: 11.5px;
+      color: var(--overlay0);
+      text-align: center;
     }
+    .footer a { color: var(--overlay0); }
+    .footer a:hover { color: var(--blue); }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="title-block">
-    <h1>DCS AFTERBURNER</h1>
-    <div class="sub">MISSION ANALYSIS SYSTEM // BROWSER EDITION</div>
+<div class="window">
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="win-controls">
+      <div class="wc wc-close"></div>
+      <div class="wc wc-min"></div>
+      <div class="wc wc-max"></div>
+    </div>
+    <div class="win-title">DCS Afterburner — Konsole</div>
   </div>
-  <div class="status-row">
-    <div class="dot busy" id="dot"></div>
-    <span id="status-txt">INITIALIZING</span>
-  </div>
-</header>
 
-<main>
-  <div class="upload-row">
-    <div>
-      <div class="field-label">Mission File</div>
-      <div class="drop-zone" id="miz-zone">
-        <input type="file" id="miz-input" accept=".miz">
-        <div class="dz-icon">▣</div>
-        <div class="dz-main">DROP .MIZ FILE</div>
-        <div class="dz-hint">or click to select</div>
-        <div class="dz-file" id="miz-name"></div>
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab active">afterburner</div>
+    <div class="tab">+</div>
+  </div>
+
+  <!-- Terminal body -->
+  <div class="terminal">
+
+    <!-- Boot sequence -->
+    <div id="boot-output">
+      <div class="boot-line dim"># DCS Afterburner v0.1.0 — Mission Analysis System</div>
+      <div class="boot-line dim"># All analysis runs in-browser. No files are uploaded or stored.</div>
+      <div class="boot-line" id="boot-pyodide">  loading analysis engine<span id="boot-dots"></span></div>
+    </div>
+
+    <!-- Input prompt (shown after boot) -->
+    <div id="input-area" style="display:none">
+      <div class="prompt-row">
+        <span class="ps-dir">~/dcs-afterburner</span>
+        <span class="ps-git"> main</span>
+        <span class="ps-end">❯</span>
+      </div>
+
+      <div class="cmd-line">
+        <span class="cmd-prefix"><span class="cmd-kw">afterburner</span> <span class="cmd-sub">analyze</span> </span>
+
+        <!-- .miz slot -->
+        <span class="file-slot" id="miz-zone" title="Drop .miz file or click to browse">
+          <input type="file" id="miz-input" accept=".miz">
+          <span class="slot-inner">
+            <span class="slot-icon">&#8964;</span>
+            <span class="slot-placeholder" id="miz-ph">drop .miz or click</span>
+            <span class="slot-value" id="miz-name" style="display:none"></span>
+          </span>
+        </span>
+
+        <!-- --log slot (always shown, optional) -->
+        <span class="cmd-flag">--log</span>
+        <span class="file-slot" id="log-zone" title="Drop dcs.log or click to browse (optional)">
+          <input type="file" id="log-input" accept=".log,.txt">
+          <span class="slot-inner">
+            <span class="slot-icon">&#8964;</span>
+            <span class="slot-placeholder" id="log-ph">dcs.log (optional)</span>
+            <span class="slot-value" id="log-name" style="display:none"></span>
+          </span>
+        </span>
+      </div>
+
+      <div class="action-row">
+        <button class="term-btn" id="analyze-btn" disabled>
+          <span class="key">↵</span> analyze
+        </button>
+        <button class="term-btn blue" id="optimize-btn" disabled>
+          <span class="key">⌘</span> optimize
+        </button>
       </div>
     </div>
-    <div>
-      <div class="field-label">DCS Log File <span style="color:var(--text-dim);letter-spacing:0">(optional)</span></div>
-      <div class="drop-zone" id="log-zone">
-        <input type="file" id="log-input">
-        <div class="dz-icon">▤</div>
-        <div class="dz-main">DROP DCS.LOG FILE</div>
-        <div class="dz-hint">correlates runtime errors with findings</div>
-        <div class="dz-file" id="log-name"></div>
-      </div>
-    </div>
-  </div>
 
-  <button id="analyze-btn" disabled>[ ANALYZE MISSION ]</button>
-  <button id="optimize-btn" disabled>[ OPTIMIZE (SAFE) ]</button>
+    <!-- Run output history -->
+    <div id="output"></div>
 
-  <div id="progress">
-    <div class="prog-label" id="prog-txt">LOADING ANALYSIS ENGINE</div>
-    <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
-  </div>
+  </div><!-- /terminal -->
+</div><!-- /window -->
 
-  <div id="results"></div>
-
-  <div class="footer-note">
-    All analysis runs entirely in your browser &mdash; no files are uploaded or stored.
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="https://github.com/TylerDOC1776/dcs-afterburner" target="_blank">github.com/TylerDOC1776/dcs-afterburner</a>
-  </div>
-</main>
+<div class="footer">
+  No files uploaded or stored &mdash; analysis runs entirely in your browser.
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="https://github.com/TylerDOC1776/dcs-afterburner" target="_blank">github</a>
+</div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
 'use strict';
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────────────────
 let pyodide     = null;
 let engineReady = false;
 let mizFile     = null;
 let logFile     = null;
 
-// ── DOM ──────────────────────────────────────────────────────────────────────
-const dot        = document.getElementById('dot');
-const statusTxt  = document.getElementById('status-txt');
+// ── DOM ────────────────────────────────────────────────────────────────────────
+const inputArea   = document.getElementById('input-area');
 const analyzeBtn  = document.getElementById('analyze-btn');
 const optimizeBtn = document.getElementById('optimize-btn');
-const progDiv     = document.getElementById('progress');
-const progTxt     = document.getElementById('prog-txt');
-const progFill    = document.getElementById('prog-fill');
-const resultsDiv  = document.getElementById('results');
+const outputDiv   = document.getElementById('output');
+const mizZone     = document.getElementById('miz-zone');
+const logZone     = document.getElementById('log-zone');
+const mizInput    = document.getElementById('miz-input');
+const logInput    = document.getElementById('log-input');
+const mizPh       = document.getElementById('miz-ph');
+const mizNameEl   = document.getElementById('miz-name');
+const logPh       = document.getElementById('log-ph');
+const logNameEl   = document.getElementById('log-name');
 
-// ── Status helpers ────────────────────────────────────────────────────────────
-function setStatus(cls, msg) {
-  dot.className = 'dot ' + cls;
-  statusTxt.textContent = msg;
+// ── Boot animation ─────────────────────────────────────────────────────────────
+const bootDotsEl = document.getElementById('boot-dots');
+let dotTimer = setInterval(() => {
+  bootDotsEl.textContent = '.'.repeat(((bootDotsEl.textContent.length) % 3) + 1);
+}, 400);
+
+function bootLine(text, cls = '') {
+  const d = document.getElementById('boot-output');
+  const el = document.createElement('div');
+  el.className = 'boot-line' + (cls ? ' ' + cls : '');
+  el.textContent = text;
+  d.appendChild(el);
 }
 
-function showProgress(msg, pct) {
-  progDiv.classList.add('show');
-  progTxt.textContent = msg;
-  progFill.style.width = pct + '%';
-}
-
-function hideProgress() {
-  progDiv.classList.remove('show');
-  progFill.style.width = '0%';
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function refreshBtn() {
@@ -613,61 +575,134 @@ function refreshBtn() {
   optimizeBtn.disabled = !(engineReady && mizFile);
 }
 
-// ── Drop zone wiring ──────────────────────────────────────────────────────────
-function wireDropZone(zoneId, inputId, nameId, onPick) {
-  const zone  = document.getElementById(zoneId);
-  const input = document.getElementById(inputId);
-  const nameEl = document.getElementById(nameId);
+function safeFilename(name) {
+  return String(name || 'mission').replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_+/g, '_');
+}
 
+function triggerDownload(content, filename, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// ── Typewriter ─────────────────────────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function typeInto(el, text, speed = 28) {
+  el.textContent = '';
+  for (const ch of text) {
+    el.textContent += ch;
+    await sleep(speed + (Math.random() * 20 - 10));
+  }
+}
+
+// ── Progress bar ───────────────────────────────────────────────────────────────
+function makeProgressBlock() {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="prog-line" id="prog-msg">Initializing...</div>
+    <div class="prog-bar-wrap">
+      <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+      <div class="prog-pct" id="prog-pct">0%</div>
+    </div>`;
+  return wrap;
+}
+
+function setProgress(wrap, msg, pct) {
+  wrap.querySelector('#prog-msg').textContent  = msg;
+  wrap.querySelector('#prog-fill').style.width = pct + '%';
+  wrap.querySelector('#prog-pct').textContent  = pct + '%';
+}
+
+// ── Echoed command line ────────────────────────────────────────────────────────
+function makeEchoBlock(mizName, logName) {
+  const div = document.createElement('div');
+  div.className = 'echoed-cmd';
+
+  const promptSnip = `
+    <span class="ps-dir" style="background:var(--surface0);color:var(--blue);padding:1px 16px 1px 10px;font-size:12.5px;font-weight:700;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,0 100%);">~/dcs-afterburner</span>
+    <span class="ps-git" style="background:var(--mauve);color:var(--crust);padding:1px 16px 1px 14px;font-size:12.5px;font-weight:700;clip-path:polygon(7px 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,7px 100%,0 50%);margin-left:-1px;"> main</span>
+    <span class="ps-end" style="color:var(--green);margin-left:8px;font-size:15px;">❯</span>`;
+
+  div.innerHTML = promptSnip + `
+    <span style="margin-left:6px">
+      <span class="echoed-kw">afterburner</span>
+      <span class="echoed-sub"> analyze</span>
+      <span id="echo-miz" class="echoed-arg"></span>
+      ${logName ? `<span class="echoed-flag"> --log</span><span id="echo-log" class="echoed-arg"></span>` : ''}
+    </span>`;
+  return div;
+}
+
+// ── File drop zones ────────────────────────────────────────────────────────────
+function wireSlot(zone, input, phEl, nameEl, onPick) {
   input.addEventListener('change', () => {
-    if (input.files[0]) onPick(input.files[0], zone, nameEl);
+    if (input.files[0]) onPick(input.files[0]);
   });
-
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', ()  => zone.classList.remove('over'));
   zone.addEventListener('drop', e => {
-    e.preventDefault();
-    zone.classList.remove('over');
+    e.preventDefault(); zone.classList.remove('over');
     const f = e.dataTransfer.files[0];
-    if (f) onPick(f, zone, nameEl);
+    if (f) onPick(f);
   });
 }
 
-wireDropZone('miz-zone', 'miz-input', 'miz-name', (f, zone, nameEl) => {
+wireSlot(mizZone, mizInput, mizPh, mizNameEl, f => {
+  if (!f.name.toLowerCase().endsWith('.miz')) {
+    appendSlotError('mission file must be a .miz');
+    return;
+  }
   mizFile = f;
-  nameEl.textContent = f.name;
-  zone.classList.add('loaded');
+  mizPh.style.display  = 'none';
+  mizNameEl.style.display = '';
+  mizNameEl.textContent   = f.name;
+  mizZone.classList.add('loaded');
   refreshBtn();
 });
 
-wireDropZone('log-zone', 'log-input', 'log-name', (f, zone, nameEl) => {
+wireSlot(logZone, logInput, logPh, logNameEl, f => {
+  const name = f.name.toLowerCase();
+  if (!name.endsWith('.log') && !name.endsWith('.txt')) {
+    appendSlotError('log file must be .log or .txt');
+    return;
+  }
   logFile = f;
-  nameEl.textContent = f.name;
-  zone.classList.add('loaded');
+  logPh.style.display  = 'none';
+  logNameEl.style.display = '';
+  logNameEl.textContent   = f.name;
+  logZone.classList.add('loaded');
 });
 
-// ── Pyodide init ──────────────────────────────────────────────────────────────
-async function initEngine() {
-  setStatus('busy', 'INITIALIZING');
-  showProgress('LOADING ANALYSIS ENGINE', 8);
+function appendSlotError(msg) {
+  const el = document.createElement('div');
+  el.style.cssText = 'color:var(--red);font-size:12px;margin:4px 0 4px 4px;';
+  el.textContent   = '✗ ' + msg;
+  inputArea.insertBefore(el, inputArea.querySelector('.action-row'));
+  setTimeout(() => el.remove(), 3000);
+}
 
+// ── Pyodide init ───────────────────────────────────────────────────────────────
+async function initEngine() {
   try {
     pyodide = await loadPyodide();
-    showProgress('LOADING PACKAGES', 35);
 
+    const bootEl = document.getElementById('boot-pyodide');
+    clearInterval(dotTimer);
+    bootEl.innerHTML = '  loading analysis engine... <span class="ok">runtime ok</span>';
+
+    bootLine('  installing dcs-afterburner package...');
     await pyodide.loadPackage('micropip');
-    showProgress('INSTALLING AFTERBURNER', 58);
-
     const micropip = pyodide.pyimport('micropip');
     const base = window.location.href.replace(/\/[^/]*$/, '/');
     await micropip.install(base + 'wheels/dcs_afterburner-0.1.0-py3-none-any.whl');
 
-    showProgress('LOADING RULES', 80);
-
+    bootLine('  importing rules...');
     await pyodide.runPythonAsync(`
 import json
 from pathlib import Path
-import afterburner.rules          # side-effect: registers all rules
+import afterburner.rules
 from afterburner.parsers.mission_parser import parse
 from afterburner.rules.base import run_all
 from afterburner.reporters.json_report import to_json
@@ -712,145 +747,316 @@ def optimize(miz_path):
         return json.dumps({"ok": False, "error": str(exc), "trace": traceback.format_exc()})
 `);
 
-    showProgress('READY', 100);
-    setTimeout(() => {
-      hideProgress();
-      setStatus('ready', 'SYSTEM READY');
-      engineReady = true;
-      refreshBtn();
-    }, 350);
+    bootLine('  done. engine ready.', 'ok');
+    bootLine('');
+
+    engineReady = true;
+    inputArea.style.display = '';
+    refreshBtn();
 
   } catch (err) {
-    hideProgress();
-    setStatus('err', 'INIT FAILED');
-    showError('Engine initialization failed', String(err));
+    clearInterval(dotTimer);
+    const bootEl = document.getElementById('boot-pyodide');
+    bootEl.innerHTML = `  loading analysis engine... <span class="err">FAILED: ${esc(String(err))}</span>`;
   }
 }
 
-// ── Analyze ───────────────────────────────────────────────────────────────────
+// ── Analyze ────────────────────────────────────────────────────────────────────
 analyzeBtn.addEventListener('click', async () => {
   if (!mizFile || !engineReady) return;
 
-  analyzeBtn.disabled = true;
-  resultsDiv.classList.remove('show');
-  resultsDiv.innerHTML = '';
-  showProgress('READING FILES', 15);
+  outputDiv.querySelectorAll('.cursor').forEach(c => c.remove());
+  analyzeBtn.disabled  = true;
+  optimizeBtn.disabled = true;
 
-  try {
-    pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
+  const block    = document.createElement('div');
+  block.className = 'run-block';
+  outputDiv.appendChild(block);
 
-    let logArg = 'None';
-    if (logFile) {
-      pyodide.FS.writeFile('/tmp/dcs.log', new Uint8Array(await logFile.arrayBuffer()));
-      logArg = "'/tmp/dcs.log'";
-    }
+  // 1. Echo the command with typewriter
+  const echoDiv = makeEchoBlock(mizFile.name, logFile?.name);
+  block.appendChild(echoDiv);
+  await sleep(80);
+  const mizSpan = echoDiv.querySelector('#echo-miz');
+  const logSpan = echoDiv.querySelector('#echo-log');
+  await typeInto(mizSpan, ' ' + mizFile.name);
+  if (logSpan) await typeInto(logSpan, ' ' + logFile.name);
+  await sleep(120);
 
-    showProgress('ANALYZING MISSION', 55);
-    const raw    = await pyodide.runPythonAsync(`analyze('/tmp/mission.miz', ${logArg})`);
-    const result = JSON.parse(raw);
+  // 2. Progress bar
+  const progBlock = makeProgressBlock();
+  block.appendChild(progBlock);
 
-    showProgress('RENDERING', 90);
-    setTimeout(() => {
-      hideProgress();
-      refreshBtn();
-      if (result.ok) {
-        renderResults(result.data);
-      } else {
-        showError('Analysis failed', result.error, result.trace);
-      }
-    }, 150);
+  setProgress(progBlock, 'reading mission file...', 10);
+  pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
 
-  } catch (err) {
-    hideProgress();
-    refreshBtn();
-    showError('Unexpected error', String(err));
+  let logArg = 'None';
+  if (logFile) {
+    setProgress(progBlock, 'reading log file...', 22);
+    pyodide.FS.writeFile('/tmp/dcs.log', new Uint8Array(await logFile.arrayBuffer()));
+    logArg = "'/tmp/dcs.log'";
   }
+
+  setProgress(progBlock, 'running analysis engine...', 45);
+  await sleep(80);
+
+  let raw, result;
+  try {
+    raw    = await pyodide.runPythonAsync(`analyze('/tmp/mission.miz', ${logArg})`);
+    result = JSON.parse(raw);
+  } catch (err) {
+    progBlock.remove();
+    appendError(block, 'Unexpected error', String(err));
+    refreshBtn();
+    return;
+  }
+
+  setProgress(progBlock, 'rendering results...', 90);
+  await sleep(150);
+  progBlock.remove();
+
+  if (result.ok) {
+    renderResults(block, result.data);
+  } else {
+    appendError(block, 'Analysis failed', result.error, result.trace);
+  }
+
+  // new idle prompt
+  appendIdlePrompt();
+  refreshBtn();
+  block.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
-// ── Optimize ─────────────────────────────────────────────────────────────────
+// ── Optimize ───────────────────────────────────────────────────────────────────
 optimizeBtn.addEventListener('click', async () => {
   if (!mizFile || !engineReady) return;
 
-  optimizeBtn.disabled = true;
+  outputDiv.querySelectorAll('.cursor').forEach(c => c.remove());
   analyzeBtn.disabled  = true;
-  resultsDiv.classList.remove('show');
-  resultsDiv.innerHTML = '';
-  showProgress('OPTIMIZING MISSION', 40);
+  optimizeBtn.disabled = true;
 
+  const block = document.createElement('div');
+  block.className = 'run-block';
+  outputDiv.appendChild(block);
+
+  const echoDiv = makeEchoBlock(mizFile.name, null);
+  // swap sub-command text
+  const subEl = echoDiv.querySelector('.echoed-sub');
+  if (subEl) subEl.textContent = ' optimize --safe';
+  block.appendChild(echoDiv);
+  const mizSpan = echoDiv.querySelector('#echo-miz');
+  await sleep(80);
+  await typeInto(mizSpan, ' ' + mizFile.name);
+  await sleep(120);
+
+  const progBlock = makeProgressBlock();
+  block.appendChild(progBlock);
+
+  setProgress(progBlock, 'reading mission file...', 15);
+  pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
+
+  setProgress(progBlock, 'optimizing mission...', 45);
+  await sleep(80);
+
+  let raw, result;
   try {
-    pyodide.FS.writeFile('/tmp/mission.miz', new Uint8Array(await mizFile.arrayBuffer()));
-
-    showProgress('REPACKING', 75);
-    const raw    = await pyodide.runPythonAsync(`optimize('/tmp/mission.miz')`);
-    const result = JSON.parse(raw);
-
-    showProgress('DONE', 100);
-    setTimeout(() => {
-      hideProgress();
-      refreshBtn();
-      if (result.ok) {
-        const outBytes = pyodide.FS.readFile('/tmp/mission.optimized.miz');
-        const base = safeFilename(mizFile.name.replace(/\.miz$/i, ''));
-        triggerDownload(outBytes, base + '.optimized.miz', 'application/zip');
-        renderOptimizeResults(result, base + '.optimized.miz');
-      } else {
-        showError('Optimization failed', result.error, result.trace);
-      }
-    }, 150);
-
+    raw    = await pyodide.runPythonAsync(`optimize('/tmp/mission.miz')`);
+    result = JSON.parse(raw);
   } catch (err) {
-    hideProgress();
+    progBlock.remove();
+    appendError(block, 'Unexpected error', String(err));
     refreshBtn();
-    showError('Unexpected error', String(err));
+    return;
   }
+
+  setProgress(progBlock, 'repacking...', 85);
+  await sleep(120);
+  progBlock.remove();
+
+  if (result.ok) {
+    const outBytes = pyodide.FS.readFile('/tmp/mission.optimized.miz');
+    const base     = safeFilename(mizFile.name.replace(/\.miz$/i, ''));
+    const outName  = base + '.optimized.miz';
+    triggerDownload(outBytes, outName, 'application/zip');
+    renderOptResults(block, result, outName);
+  } else {
+    appendError(block, 'Optimization failed', result.error, result.trace);
+  }
+
+  appendIdlePrompt();
+  refreshBtn();
+  block.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
-function renderOptimizeResults(d, filename) {
-  const saved     = d.bytes_before - d.bytes_after;
-  const savedKB   = (saved / 1024).toFixed(1);
-  const pct       = d.bytes_before > 0 ? ((saved / d.bytes_before) * 100).toFixed(1) : '0.0';
-  const applied   = d.changes.filter(c => c.status === 'applied');
-  const skipped   = d.changes.filter(c => c.status !== 'applied');
-
-  const changesHtml = [
-    ...applied.map(c => `
-      <div class="opt-change">
-        <span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}
-      </div>`),
-    ...skipped.map(c => `
-      <div class="opt-change opt-skipped">
-        <span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}
-      </div>`),
-  ].join('') || '<div class="opt-change opt-skipped">No changes applied.</div>';
-
-  resultsDiv.innerHTML = `
-    <div class="opt-panel">
-      <div class="opt-head">OPTIMIZATION COMPLETE</div>
-      <div class="opt-bytes">
-        <div class="opt-stat">BEFORE <span>${(d.bytes_before / 1024).toFixed(1)} KB</span></div>
-        <div class="opt-stat">AFTER <span>${(d.bytes_after / 1024).toFixed(1)} KB</span></div>
-        <div class="opt-stat saved">SAVED <span>${savedKB} KB (${pct}%)</span></div>
-      </div>
-      ${changesHtml}
-      <div class="opt-dl">DOWNLOADED: ${esc(filename)}</div>
-    </div>`;
-
-  resultsDiv.classList.add('show');
-  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Render results ─────────────────────────────────────────────────────────────
 const SEV_ORDER = ['critical', 'warning', 'info'];
 
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function renderResults(block, d) {
+  const s    = d.summary;
+  const band = s.risk_label;
+
+  const counts = { critical: 0, warning: 0, info: 0 };
+  d.findings.forEach(f => { if (counts[f.severity] !== undefined) counts[f.severity]++; });
+
+  const sorted = [...d.findings].sort(
+    (a, b) => SEV_ORDER.indexOf(a.severity) - SEV_ORDER.indexOf(b.severity));
+
+  const countStr = [
+    counts.critical ? `<span style="color:var(--red)">${counts.critical} critical</span>` : '',
+    counts.warning  ? `<span style="color:var(--yellow)">${counts.warning} warning</span>` : '',
+    counts.info     ? `<span style="color:var(--blue)">${counts.info} info</span>` : '',
+  ].filter(Boolean).join('  ');
+
+  const findingsHtml = sorted.length === 0
+    ? '<div class="clear-msg">no findings — mission clear</div>'
+    : sorted.map((f, i) => `
+        <div class="finding">
+          <div class="f-row">
+            <span class="f-sev ${esc(f.severity)}">[${esc(f.severity).toUpperCase()}]</span>
+            <span class="f-id">${esc(f.rule_id)}</span>
+            <span class="f-title">${esc(f.title)}</span>
+            <button class="copy-btn" data-idx="${i}" title="Copy finding">copy</button>
+          </div>
+          <div class="f-detail">${esc(f.detail)}</div>
+          ${f.fix ? `<div class="f-fix">${esc(f.fix)}</div>` : ''}
+        </div>`).join('');
+
+  const base = safeFilename(d.mission_name || d.source_file);
+
+  const out = document.createElement('div');
+  out.innerHTML = `
+    <hr class="out-divider">
+    <div class="summary-block band-${band}">
+      <div class="score-toggle" title="Toggle mission stats">
+        <div class="score-num">${s.risk_score}</div>
+        <div class="score-band">${band}</div>
+        <div style="color:var(--overlay0);font-size:11px;margin-left:2px;">/ 100</div>
+        <span class="section-chevron" style="margin-left:8px;font-size:13px;">▾</span>
+      </div>
+      <div class="collapsible" id="stats-body-${base}">
+        <div class="score-bar-row">
+          <div class="risk-bar"><div class="risk-fill band-${band}" style="width:${s.risk_score}%"></div></div>
+          <div class="risk-label">risk score</div>
+        </div>
+        <div class="stat-grid">
+          <span class="stat-k">mission</span>   <span class="stat-v">${esc(d.mission_name || d.source_file)}</span>
+          <span class="stat-k">theatre</span>   <span class="stat-v">${esc(s.theatre)}</span>
+          <span class="stat-k">active units</span><span class="stat-v ${s.active_units > 600 ? 'crit' : s.active_units > 350 ? 'warn' : ''}">${s.active_units}</span>
+          <span class="stat-k">total units</span><span class="stat-v">${s.total_units}</span>
+          <span class="stat-k">player slots</span><span class="stat-v">${s.player_slots}</span>
+          <span class="stat-k">triggers</span>  <span class="stat-v">${s.trigger_count}</span>
+          <span class="stat-k">zones</span>     <span class="stat-v ${s.zone_count > 90 ? 'warn' : ''}">${s.zone_count}</span>
+          <span class="stat-k">statics</span>   <span class="stat-v">${s.total_statics}</span>
+          <span class="stat-k">groups</span>    <span class="stat-v">${s.total_groups}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-hd" id="findings-hd-${base}">
+      <span class="section-chevron">▾</span>
+      <span class="findings-hd">findings (${d.findings.length})${d.findings.length ? '&nbsp;&nbsp;' + countStr : ''}</span>
+    </div>
+    <div class="collapsible" id="findings-body-${base}">
+      ${findingsHtml}
+    </div>
+
+    <div class="out-actions">
+      <button class="out-action-btn" id="dl-md-${base}">save report (.md)</button>
+      <button class="out-action-btn" id="dl-json-${base}">save report (.json)</button>
+    </div>`;
+
+  block.appendChild(out);
+
+  // Collapsible: summary stats
+  const scoreToggle = out.querySelector('.score-toggle');
+  const statsBody   = out.querySelector(`#stats-body-${base}`);
+  const statsChevron = scoreToggle.querySelector('.section-chevron');
+  scoreToggle.addEventListener('click', () => {
+    const collapsed = statsBody.classList.toggle('collapsed');
+    statsChevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
+  });
+
+  // Collapsible: findings list
+  const findingsHd   = out.querySelector(`#findings-hd-${base}`);
+  const findingsBody = out.querySelector(`#findings-body-${base}`);
+  const findChevron  = findingsHd.querySelector('.section-chevron');
+  findingsHd.addEventListener('click', () => {
+    const collapsed = findingsBody.classList.toggle('collapsed');
+    findChevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
+  });
+
+  // Copy buttons
+  out.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const f = sorted[+btn.dataset.idx];
+      const text = [
+        `[${f.severity.toUpperCase()}] ${f.rule_id} — ${f.title}`,
+        f.detail,
+        f.fix ? `Fix: ${f.fix}` : '',
+      ].filter(Boolean).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+  });
+
+  out.querySelector(`#dl-md-${base}`).addEventListener('click', () =>
+    triggerDownload(buildMarkdown(d), base + '-afterburner.md', 'text/markdown'));
+  out.querySelector(`#dl-json-${base}`).addEventListener('click', () =>
+    triggerDownload(JSON.stringify(d, null, 2), base + '-afterburner.json', 'application/json'));
 }
 
-// ── Download helpers ──────────────────────────────────────────────────────────
+function renderOptResults(block, d, filename) {
+  const saved   = d.bytes_before - d.bytes_after;
+  const savedKB = (saved / 1024).toFixed(1);
+  const pct     = d.bytes_before > 0 ? ((saved / d.bytes_before) * 100).toFixed(1) : '0.0';
+  const applied = d.changes.filter(c => c.status === 'applied');
+  const skipped = d.changes.filter(c => c.status !== 'applied');
+
+  const changesHtml = [
+    ...applied.map(c => `<div class="opt-change"><span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}</div>`),
+    ...skipped.map(c => `<div class="opt-change skipped"><span class="opt-id">${esc(c.transform_id)}</span>${esc(c.detail)}</div>`),
+  ].join('') || '<div class="opt-change">no changes applied</div>';
+
+  const out = document.createElement('div');
+  out.innerHTML = `
+    <hr class="out-divider">
+    <div class="summary-block">
+      <div class="out-section-hd">optimization complete</div>
+      <div class="opt-stat-row">
+        <div class="opt-stat">before <span>${(d.bytes_before/1024).toFixed(1)} KB</span></div>
+        <div class="opt-stat">after  <span>${(d.bytes_after/1024).toFixed(1)} KB</span></div>
+        <div class="opt-stat saved">saved <span>${savedKB} KB (${pct}%)</span></div>
+      </div>
+      ${changesHtml}
+      <div style="margin-top:8px;font-size:12px;color:var(--green)">downloaded: ${esc(filename)}</div>
+    </div>`;
+  block.appendChild(out);
+}
+
+function appendError(block, heading, msg, trace) {
+  const out = document.createElement('div');
+  out.className = 'err-block';
+  out.innerHTML = `${esc(heading).toLowerCase()}: ${esc(msg)}${trace ? `<pre>${esc(trace)}</pre>` : ''}`;
+  block.appendChild(out);
+}
+
+function appendIdlePrompt() {
+  const row = document.createElement('div');
+  row.className = 'prompt-row';
+  row.style.marginTop = '12px';
+  row.innerHTML = `
+    <span class="ps-dir" style="background:var(--surface0);color:var(--blue);padding:1px 16px 1px 10px;font-size:12.5px;font-weight:700;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,0 100%);">~/dcs-afterburner</span>
+    <span class="ps-git" style="background:var(--mauve);color:var(--crust);padding:1px 16px 1px 14px;font-size:12.5px;font-weight:700;clip-path:polygon(7px 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,7px 100%,0 50%);margin-left:-1px;"> main</span>
+    <span class="ps-end" style="color:var(--green);margin-left:8px;font-size:15px;">❯</span>
+    <span class="cursor" style="margin-left:8px;"></span>`;
+  outputDiv.appendChild(row);
+}
+
+// ── Markdown builder ───────────────────────────────────────────────────────────
 const SEV_ICON = { critical: '🔴', warning: '🟡', info: '🔵' };
 
 function buildMarkdown(d) {
@@ -878,13 +1084,9 @@ function buildMarkdown(d) {
   lines.push(`| Trigger zones | ${s.zone_count} |`);
   lines.push('');
   if (d.findings.length === 0) {
-    lines.push('## Findings');
-    lines.push('');
-    lines.push('No findings.');
-    lines.push('');
+    lines.push('## Findings\n\nNo findings.\n');
   } else {
-    lines.push('## Findings');
-    lines.push('');
+    lines.push('## Findings\n');
     for (const f of d.findings) {
       const icon = SEV_ICON[f.severity] || '';
       lines.push(`### ${icon} \`${f.rule_id}\` — ${f.title}`);
@@ -893,117 +1095,15 @@ function buildMarkdown(d) {
       lines.push(`**Confidence:** ${Math.round(f.confidence * 100)}%  `);
       lines.push('');
       lines.push(f.detail);
-      if (f.fix) {
-        lines.push('');
-        lines.push(`**Fix:** ${f.fix}`);
-      }
+      if (f.fix) { lines.push(''); lines.push(`**Fix:** ${f.fix}`); }
       lines.push('');
     }
   }
   return lines.join('\n');
 }
 
-function safeFilename(name) {
-  return String(name || 'mission').replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_+/g, '_');
-}
-
-function triggerDownload(content, filename, mime) {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
-function renderResults(d) {
-  const s     = d.summary;
-  const band  = s.risk_label;   // LOW | MODERATE | HIGH | CRITICAL
-  const score = s.risk_score;
-
-  const counts = { critical: 0, warning: 0, info: 0 };
-  d.findings.forEach(f => { if (counts[f.severity] !== undefined) counts[f.severity]++; });
-
-  // Badge HTML
-  const badges = [
-    counts.critical ? `<span class="badge c">${counts.critical} CRITICAL</span>` : '',
-    counts.warning  ? `<span class="badge w">${counts.warning} WARNING</span>`   : '',
-    counts.info     ? `<span class="badge i">${counts.info} INFO</span>`          : '',
-  ].join('');
-
-  // Sorted findings
-  const sorted = [...d.findings].sort(
-    (a, b) => SEV_ORDER.indexOf(a.severity) - SEV_ORDER.indexOf(b.severity)
-  );
-
-  const findingsHtml = sorted.length === 0
-    ? '<div class="clear-msg">NO FINDINGS — MISSION CLEAR</div>'
-    : sorted.map(f => `
-        <div class="finding">
-          <div class="f-header">
-            <span class="f-sev ${esc(f.severity)}">${esc(f.severity).toUpperCase()}</span>
-            <span class="f-id">${esc(f.rule_id)}</span>
-            <span class="f-title">${esc(f.title)}</span>
-          </div>
-          <div class="f-detail">${esc(f.detail)}</div>
-          ${f.fix ? `<div class="f-fix">${esc(f.fix)}</div>` : ''}
-        </div>`).join('');
-
-  resultsDiv.innerHTML = `
-    <div class="result-head">
-      <div class="score-card band-${band}">
-        <div class="score-num">${score}</div>
-        <div class="score-lbl">${band}</div>
-        <div class="score-tag">RISK SCORE</div>
-      </div>
-      <div class="meta-card">
-        <div class="mission-name">${esc(d.mission_name || d.source_file)}</div>
-        <div class="stats-grid">
-          <div class="stat"><span class="stat-k">THEATRE</span>       <span class="stat-v">${esc(s.theatre)}</span></div>
-          <div class="stat"><span class="stat-k">ACTIVE UNITS</span>  <span class="stat-v">${s.active_units}</span></div>
-          <div class="stat"><span class="stat-k">TOTAL UNITS</span>   <span class="stat-v">${s.total_units}</span></div>
-          <div class="stat"><span class="stat-k">PLAYER SLOTS</span>  <span class="stat-v">${s.player_slots}</span></div>
-          <div class="stat"><span class="stat-k">TRIGGERS</span>      <span class="stat-v">${s.trigger_count}</span></div>
-          <div class="stat"><span class="stat-k">ZONES</span>         <span class="stat-v">${s.zone_count}</span></div>
-          <div class="stat"><span class="stat-k">STATIC OBJECTS</span><span class="stat-v">${s.total_statics}</span></div>
-          <div class="stat"><span class="stat-k">GROUPS</span>        <span class="stat-v">${s.total_groups}</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="findings-panel">
-      <div class="findings-head">
-        <span class="findings-title">FINDINGS</span>
-        ${badges}
-      </div>
-      ${findingsHtml}
-    </div>
-    <div class="download-bar">
-      <button class="dl-btn" id="dl-md-btn">[ Download Report .md ]</button>
-      <button class="dl-btn" id="dl-json-btn">[ Download Report .json ]</button>
-    </div>`;
-
-  const base = safeFilename(d.mission_name || d.source_file);
-  document.getElementById('dl-md-btn').addEventListener('click', () =>
-    triggerDownload(buildMarkdown(d), base + '-afterburner.md', 'text/markdown'));
-  document.getElementById('dl-json-btn').addEventListener('click', () =>
-    triggerDownload(JSON.stringify(d, null, 2), base + '-afterburner.json', 'application/json'));
-
-  resultsDiv.classList.add('show');
-  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function showError(heading, msg, trace) {
-  resultsDiv.innerHTML = `
-    <div class="err-box">
-      ${esc(heading).toUpperCase()}
-      <pre>${esc(msg)}${trace ? '\n\n' + esc(trace) : ''}</pre>
-    </div>`;
-  resultsDiv.classList.add('show');
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Boot ───────────────────────────────────────────────────────────────────────
 initEngine();
 </script>
-
 </body>
 </html>

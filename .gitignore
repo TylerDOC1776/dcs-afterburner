@@ -62,3 +62,6 @@ desktop.ini
 
 # Local config overrides
 afterburner.local.yaml
+
+# UI backup — local only
+docs/index_green_phosphor.html
