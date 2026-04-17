@@ -413,6 +413,32 @@
 
     .footer-note a { color: var(--text-dim); }
     .footer-note a:hover { color: var(--text); }
+
+    /* ── Download bar ── */
+    .download-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .dl-btn {
+      flex: 1;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .dl-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -652,6 +678,72 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+// ── Download helpers ──────────────────────────────────────────────────────────
+const SEV_ICON = { critical: '🔴', warning: '🟡', info: '🔵' };
+
+function buildMarkdown(d) {
+  const s = d.summary;
+  const lines = [];
+  lines.push(`# DCS Afterburner Report: ${d.mission_name}`);
+  lines.push('');
+  lines.push(`**Source:** \`${d.source_file}\`  `);
+  lines.push(`**Hash:** \`${d.hash}\`  `);
+  lines.push(`**Theatre:** ${s.theatre}  `);
+  lines.push(`**Risk:** ${s.risk_score}/100 — ${s.risk_label}`);
+  lines.push('');
+  lines.push('## Mission Summary');
+  lines.push('');
+  lines.push('| Metric | Value |');
+  lines.push('|--------|-------|');
+  lines.push(`| Total units | ${s.total_units} |`);
+  lines.push(`| Active at start | ${s.active_units} |`);
+  lines.push(`| Late activation | ${s.late_units} |`);
+  lines.push(`| Player slots | ${s.player_slots} |`);
+  lines.push(`| Groups (total) | ${s.total_groups} |`);
+  lines.push(`| Active groups | ${s.active_groups} |`);
+  lines.push(`| Static objects | ${s.total_statics} |`);
+  lines.push(`| Triggers | ${s.trigger_count} |`);
+  lines.push(`| Trigger zones | ${s.zone_count} |`);
+  lines.push('');
+  if (d.findings.length === 0) {
+    lines.push('## Findings');
+    lines.push('');
+    lines.push('No findings.');
+    lines.push('');
+  } else {
+    lines.push('## Findings');
+    lines.push('');
+    for (const f of d.findings) {
+      const icon = SEV_ICON[f.severity] || '';
+      lines.push(`### ${icon} \`${f.rule_id}\` — ${f.title}`);
+      lines.push('');
+      lines.push(`**Severity:** ${f.severity}  `);
+      lines.push(`**Confidence:** ${Math.round(f.confidence * 100)}%  `);
+      lines.push('');
+      lines.push(f.detail);
+      if (f.fix) {
+        lines.push('');
+        lines.push(`**Fix:** ${f.fix}`);
+      }
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}
+
+function safeFilename(name) {
+  return String(name || 'mission').replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/_+/g, '_');
+}
+
+function triggerDownload(content, filename, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function renderResults(d) {
   const s     = d.summary;
   const band  = s.risk_label;   // LOW | MODERATE | HIGH | CRITICAL
@@ -712,7 +804,17 @@ function renderResults(d) {
         ${badges}
       </div>
       ${findingsHtml}
+    </div>
+    <div class="download-bar">
+      <button class="dl-btn" id="dl-md-btn">[ Download Report .md ]</button>
+      <button class="dl-btn" id="dl-json-btn">[ Download Report .json ]</button>
     </div>`;
+
+  const base = safeFilename(d.mission_name || d.source_file);
+  document.getElementById('dl-md-btn').addEventListener('click', () =>
+    triggerDownload(buildMarkdown(d), base + '-afterburner.md', 'text/markdown'));
+  document.getElementById('dl-json-btn').addEventListener('click', () =>
+    triggerDownload(JSON.stringify(d, null, 2), base + '-afterburner.json', 'application/json'));
 
   resultsDiv.classList.add('show');
   resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
