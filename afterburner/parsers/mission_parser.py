@@ -36,9 +36,30 @@ def parse(miz_path: str | Path) -> Mission:
         raw = lua_table.loads((work_dir / "mission").read_text(encoding="utf-8"))
         dictionary = _load_dictionary(work_dir)
         resource_map = _load_resource_map(work_dir)
-        return _build_mission(raw, miz_path.name, sha256, dictionary, resource_map)
+        mission = _build_mission(raw, miz_path.name, sha256, dictionary, resource_map)
+        mission.script_loc = _count_script_loc(work_dir, mission.script_files)
+        return mission
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _count_script_loc(work_dir: Path, script_files: list[str]) -> dict[str, int]:
+    """Return per-file non-blank line counts for all script files in the extracted .miz."""
+    search_dirs = [work_dir / "l10n" / "DEFAULT", work_dir]
+    result: dict[str, int] = {}
+    for name in script_files:
+        for d in search_dirs:
+            candidate = d / name
+            if candidate.exists():
+                try:
+                    lines = candidate.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    result[name] = sum(1 for ln in lines if ln.strip())
+                except OSError:
+                    pass
+                break
+    return result
 
 
 def _load_dictionary(work_dir: Path) -> dict[str, str]:

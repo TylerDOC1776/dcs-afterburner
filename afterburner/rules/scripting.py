@@ -1,4 +1,4 @@
-"""Scripting rules (PERF_001, PERF_002)."""
+"""Scripting rules (PERF_001, PERF_002, SCPT_001)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,26 @@ from afterburner.rules.base import Rule, register
 
 _CTLD_NAMES = {"ctld"}
 _CSAR_NAMES = {"csar"}
+
+# Known large frameworks that are routinely shipped unstripped — exclude from
+# the SCPT_001 LOC threshold so it only catches mission-specific script bloat.
+_FRAMEWORK_NAMES = {
+    "moose",
+    "mist",
+    "ctld",
+    "csar",
+    "splash_damage",
+    "zonecommander",
+    "aien",
+}
+
+_SCPT_WARN = 5_000
+_SCPT_CRIT = 15_000
+
+
+def _is_framework(filename: str) -> bool:
+    name = filename.lower()
+    return any(kw in name for kw in _FRAMEWORK_NAMES)
 
 
 def _matches(script_files: list[str], keywords: set[str]) -> bool:
@@ -83,6 +103,54 @@ class CsarDetected(Rule):
                     "CSAR detected in mission scripts. "
                     "Timer accumulation (N helis × M wounded groups) can grow on "
                     "long sessions with many active rescues."
+                ),
+                fix=self.fix,
+            )
+        ]
+
+
+@register
+class ScriptLinesOfCode(Rule):
+    rule_id = "SCPT_001"
+    title = "High script line count"
+    severity = Severity.WARNING
+    description = (
+        "The total non-blank lines of Lua code across all DO SCRIPT FILE scripts "
+        "loaded by this mission exceeds the warning threshold. "
+        "All script files are parsed and executed synchronously on the DCS main thread "
+        "at mission load. Large scripts increase load time and can cause a noticeable "
+        "stutter or timeout for connecting clients."
+    )
+    fix = (
+        "Audit script files for dead code, commented-out blocks, or redundant copies "
+        "of frameworks. Consider stripping/minifying large libraries before packing "
+        "into the .miz. Remove scripts that are loaded but not used."
+    )
+    category = "performance"
+
+    def check(self, mission: Mission) -> list[ReportFinding]:
+        mission_scripts = {
+            name: loc
+            for name, loc in mission.script_loc.items()
+            if not _is_framework(name)
+        }
+        total = sum(mission_scripts.values())
+        if total < _SCPT_WARN:
+            return []
+        severity = Severity.CRITICAL if total >= _SCPT_CRIT else Severity.WARNING
+        file_summary = ", ".join(
+            f"{n} ({c:,})"
+            for n, c in sorted(mission_scripts.items(), key=lambda x: -x[1])
+        )
+        return [
+            ReportFinding(
+                rule_id=self.rule_id,
+                severity=severity,
+                title=self.title,
+                detail=(
+                    f"{total:,} non-blank lines of mission-specific Lua "
+                    f"(frameworks excluded): {file_summary}. "
+                    f"Threshold: warning >{_SCPT_WARN:,}, critical >{_SCPT_CRIT:,}."
                 ),
                 fix=self.fix,
             )

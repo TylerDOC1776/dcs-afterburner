@@ -79,3 +79,6 @@ class Mission:
     zones: list[Zone] = field(default_factory=list)
     triggers_detail: list[Trigger] = field(default_factory=list)
     script_files: list[str] = field(default_factory=list)
+    script_loc: dict[str, int] = field(
+        default_factory=dict
+    )  # filename → non-blank line count
