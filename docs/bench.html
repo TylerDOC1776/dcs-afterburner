@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCS Afterburner — Bench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --base:     #1e1e2e;
+      --mantle:   #181825;
+      --crust:    #11111b;
+      --surface0: #313244;
+      --surface1: #45475a;
+      --surface2: #585b70;
+      --overlay0: #6c7086;
+      --overlay1: #7f849c;
+      --text:     #cdd6f4;
+      --subtext0: #a6adc8;
+      --subtext1: #bac2de;
+      --blue:     #89b4fa;
+      --green:    #a6e3a1;
+      --red:      #f38ba8;
+      --yellow:   #f9e2af;
+      --peach:    #fab387;
+      --mauve:    #cba6f7;
+      --teal:     #94e2d5;
+      --sky:      #89dceb;
+    }
+
+    html { min-height: 100%; background: var(--crust); }
+
+    body {
+      font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+      min-height: 100vh;
+      background: var(--crust);
+      gap: 20px;
+    }
+
+    .window {
+      width: 100%;
+      max-width: 960px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,.7);
+    }
+
+    .titlebar {
+      background: var(--mantle);
+      padding: 11px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--surface0);
+      user-select: none;
+    }
+    .win-controls { display: flex; gap: 7px; }
+    .wc { width: 12px; height: 12px; border-radius: 50%; }
+    .wc-close  { background: #f38ba8; }
+    .wc-min    { background: #f9e2af; }
+    .wc-max    { background: #a6e3a1; }
+    .win-title { flex: 1; text-align: center; font-size: 12px; color: var(--overlay0); }
+
+    .panel {
+      background: var(--base);
+      padding: 20px 24px;
+    }
+
+    h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 4px;
+    }
+    .subtitle { color: var(--overlay1); font-size: 12px; margin-bottom: 20px; }
+
+    /* Run list */
+    .run-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .run-card {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 12px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: border-color 0.15s;
+    }
+    .run-card:hover { border-color: var(--blue); }
+    .run-card.active { border-color: var(--blue); background: var(--surface0); }
+
+    .run-mission { font-weight: 700; color: var(--text); flex: 1; }
+    .run-meta { color: var(--subtext0); font-size: 12px; text-align: right; }
+    .run-duration { color: var(--teal); font-size: 12px; }
+
+    /* Detail panel */
+    .detail { display: none; flex-direction: column; gap: 20px; }
+    .detail.visible { display: flex; }
+
+    .detail-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      border-bottom: 1px solid var(--surface0);
+      padding-bottom: 12px;
+    }
+    .detail-mission { font-size: 15px; font-weight: 700; color: var(--blue); }
+    .detail-meta { color: var(--subtext0); font-size: 12px; }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 640px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-box {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .chart-label {
+      font-size: 11px;
+      color: var(--overlay1);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    canvas { max-height: 180px; }
+
+    /* Findings */
+    .findings-list { display: flex; flex-direction: column; gap: 6px; }
+    .finding {
+      display: flex;
+      gap: 10px;
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 10px 14px;
+      align-items: baseline;
+    }
+    .sev { font-size: 11px; font-weight: 700; min-width: 64px; text-transform: uppercase; }
+    .sev-critical { color: var(--red); }
+    .sev-warning  { color: var(--yellow); }
+    .sev-info     { color: var(--sky); }
+    .finding-rule { color: var(--mauve); min-width: 80px; }
+    .finding-detail { color: var(--subtext1); font-size: 12px; }
+
+    .empty { color: var(--overlay0); font-size: 12px; padding: 12px 0; }
+    .back-btn {
+      background: none;
+      border: 1px solid var(--surface1);
+      border-radius: 4px;
+      color: var(--subtext0);
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    .back-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+    .loading { color: var(--overlay0); font-size: 12px; }
+    .error-msg { color: var(--red); font-size: 12px; }
+
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--overlay1);
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="window">
+  <div class="titlebar">
+    <div class="win-controls">
+      <div class="wc wc-close"></div>
+      <div class="wc wc-min"></div>
+      <div class="wc wc-max"></div>
+    </div>
+    <div class="win-title">afterburner — bench dashboard</div>
+  </div>
+  <div class="panel">
+
+    <!-- Run list view -->
+    <div id="view-list">
+      <h1>Bench Runs</h1>
+      <div class="subtitle">DCS server performance captured via GM_BENCH</div>
+      <div id="run-list-container" class="run-list">
+        <div class="loading">Loading runs…</div>
+      </div>
+    </div>
+
+    <!-- Run detail view -->
+    <div id="view-detail" class="detail">
+      <div class="detail-header">
+        <button class="back-btn" onclick="showList()">← back</button>
+        <span class="detail-mission" id="detail-mission"></span>
+        <span class="detail-meta" id="detail-meta"></span>
+      </div>
+
+      <div>
+        <div class="section-title">Scheduler &amp; AI Load</div>
+        <div class="charts-grid">
+          <div class="chart-box">
+            <div class="chart-label">Scheduler Drift (s)</div>
+            <canvas id="chart-drift"></canvas>
+          </div>
+          <div class="chart-box">
+            <div class="chart-label">Active Groups / Units</div>
+            <canvas id="chart-groups"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="cpu-section" style="display:none">
+        <div class="section-title">Server CPU &amp; Memory</div>
+        <div class="charts-grid">
+          <div class="chart-box">
+            <div class="chart-label">CPU %</div>
+            <canvas id="chart-cpu"></canvas>
+          </div>
+          <div class="chart-box">
+            <div class="chart-label">Memory (MB)</div>
+            <canvas id="chart-mem"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="findings-section">
+        <div class="section-title">Mission Findings</div>
+        <div id="findings-list" class="findings-list"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = 'https://goon.gsquad.cc/api/v1';
+const charts = {};
+
+function fmtDuration(s) {
+  if (!s) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function chartDefaults(label, color) {
+  return {
+    type: 'line',
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: label !== null } },
+      scales: {
+        x: { ticks: { color: '#6c7086', font: { family: 'Fira Code', size: 10 } }, grid: { color: '#313244' } },
+        y: { ticks: { color: '#6c7086', font: { family: 'Fira Code', size: 10 } }, grid: { color: '#313244' } },
+      },
+    },
+  };
+}
+
+function makeChart(id, datasets, xLabels, showLegend) {
+  if (charts[id]) charts[id].destroy();
+  const cfg = chartDefaults(showLegend ? true : null);
+  cfg.data = { labels: xLabels, datasets };
+  if (!showLegend) cfg.options.plugins.legend.display = false;
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+
+function line(label, data, color) {
+  return {
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: color + '22',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.3,
+    fill: true,
+  };
+}
+
+async function loadRuns() {
+  const container = document.getElementById('run-list-container');
+  try {
+    const resp = await fetch(`${API}/bench/runs?limit=50`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const runs = await resp.json();
+    if (!runs.length) {
+      container.innerHTML = '<div class="empty">No runs recorded yet.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    for (const run of runs) {
+      const card = document.createElement('div');
+      card.className = 'run-card';
+      card.innerHTML = `
+        <div class="run-mission">${run.mission}</div>
+        <div class="run-duration">${fmtDuration(run.duration_s)}</div>
+        <div class="run-meta">${fmtDate(run.started_at)}</div>
+      `;
+      card.addEventListener('click', () => loadRun(run.id, card));
+      container.appendChild(card);
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="error-msg">Failed to load runs: ${e.message}</div>`;
+  }
+}
+
+async function loadRun(runId, card) {
+  document.querySelectorAll('.run-card').forEach(c => c.classList.remove('active'));
+  if (card) card.classList.add('active');
+
+  document.getElementById('view-list').style.display = 'none';
+  const detail = document.getElementById('view-detail');
+  detail.classList.add('visible');
+  document.getElementById('detail-mission').textContent = '…';
+
+  try {
+    const resp = await fetch(`${API}/bench/runs/${runId}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const run = await resp.json();
+
+    document.getElementById('detail-mission').textContent = run.mission;
+    document.getElementById('detail-meta').textContent =
+      `${fmtDate(run.started_at)}  ·  ${fmtDuration(run.duration_s)}`;
+
+    const ts = run.bench_timeseries || [];
+    const labels = ts.map(r => `${Math.round(r.elapsed_s / 60)}m`);
+
+    makeChart('chart-drift', [line('drift', ts.map(r => r.drift_s.toFixed(3)), '#f38ba8')], labels, false);
+    makeChart('chart-groups', [
+      line('groups', ts.map(r => r.groups), '#89b4fa'),
+      line('units',  ts.map(r => r.units),  '#a6e3a1'),
+    ], labels, true);
+
+    const cpu = run.cpu_timeseries || [];
+    const cpuSection = document.getElementById('cpu-section');
+    if (cpu.length) {
+      cpuSection.style.display = '';
+      const cpuLabels = cpu.map(r => `${Math.round(r.elapsed_s / 60)}m`);
+      makeChart('chart-cpu', [line('cpu %', cpu.map(r => r.cpu_pct.toFixed(1)), '#fab387')], cpuLabels, false);
+      makeChart('chart-mem', [line('mem MB', cpu.map(r => r.mem_mb.toFixed(0)), '#cba6f7')], cpuLabels, false);
+    } else {
+      cpuSection.style.display = 'none';
+    }
+
+    const findings = run.findings || [];
+    const fl = document.getElementById('findings-list');
+    if (!findings.length) {
+      fl.innerHTML = '<div class="empty">No findings.</div>';
+    } else {
+      fl.innerHTML = findings.map(f => `
+        <div class="finding">
+          <span class="sev sev-${f.severity}">${f.severity}</span>
+          <span class="finding-rule">${f.rule_id}</span>
+          <span class="finding-detail">${f.detail || ''}</span>
+        </div>
+      `).join('');
+    }
+
+  } catch (e) {
+    document.getElementById('detail-mission').textContent = `Error: ${e.message}`;
+  }
+}
+
+function showList() {
+  document.getElementById('view-list').style.display = '';
+  document.getElementById('view-detail').classList.remove('visible');
+  document.querySelectorAll('.run-card').forEach(c => c.classList.remove('active'));
+}
+
+loadRuns();
+</script>
+</body>
+</html>
