@@ -139,7 +139,9 @@ def test_analyze_with_log_json(tmp_path):
 def test_analyze_log_missing_file(tmp_path):
     miz = tmp_path / "test.miz"
     _make_miz(miz)
-    result = runner.invoke(app, ["analyze", str(miz), "--log", str(tmp_path / "nope.log")])
+    result = runner.invoke(
+        app, ["analyze", str(miz), "--log", str(tmp_path / "nope.log")]
+    )
     assert result.exit_code == 2
 
 
@@ -327,9 +329,7 @@ def test_report_corrupt_miz(tmp_path):
 
 
 def test_optimize_missing_file(tmp_path):
-    result = runner.invoke(
-        app, ["optimize", str(tmp_path / "nope.miz"), "--safe"]
-    )
+    result = runner.invoke(app, ["optimize", str(tmp_path / "nope.miz"), "--safe"])
     assert result.exit_code == 2
 
 
@@ -352,9 +352,7 @@ def test_optimize_output_already_exists(tmp_path):
 def test_optimize_rejects_same_output_path(tmp_path):
     miz = tmp_path / "mission.miz"
     _make_miz(miz)
-    result = runner.invoke(
-        app, ["optimize", str(miz), "--safe", "--output", str(miz)]
-    )
+    result = runner.invoke(app, ["optimize", str(miz), "--safe", "--output", str(miz)])
     assert result.exit_code == 2
 
 
@@ -424,6 +422,121 @@ def test_logs_fail_on_none_always_zero(tmp_path):
     log.write_text(_FINDING_LOG)
     result = runner.invoke(app, ["logs", str(log), "--fail-on", "none"])
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# bench subcommands
+# ---------------------------------------------------------------------------
+
+
+def test_bench_inject_creates_output(tmp_path):
+    src = tmp_path / "test.miz"
+    out = tmp_path / "test.bench.miz"
+    _make_miz(src)
+
+    result = runner.invoke(app, ["bench", "inject", str(src), "--output", str(out)])
+
+    assert result.exit_code == 0
+    assert out.exists()
+    assert "Injected GM_BENCH" in result.output
+    with zipfile.ZipFile(out) as zf:
+        mission_text = zf.read("mission").decode("utf-8")
+        resource_text = zf.read("l10n/DEFAULT/gm_bench.lua").decode("utf-8")
+        map_resource_text = zf.read("l10n/DEFAULT/mapResource").decode("utf-8")
+    assert "GM_BENCH" in mission_text
+    assert '["conditions"] = {\n      [1] = "return(c_time_after(1))",' in mission_text
+    assert (
+        'a_do_script_file(getValueResourceByKey(\\"ResKey_Action_235\\"))'
+        in mission_text
+    )
+    assert "mission.trig.func[1]=nil" in mission_text
+    assert '["func"] = {\n      [1] = "if mission.trig.conditions[1]()' in mission_text
+    assert '["trigrules"] = {' in mission_text
+    assert '["comment"] = "GM_BENCH"' in mission_text
+    assert '["file"] = "ResKey_Action_235"' in mission_text
+    assert '["predicate"] = "triggerOnce"' in mission_text
+    assert "GM_BENCH started" in resource_text
+    assert "timer.scheduleFunction" in resource_text
+    assert "ResKey_Action_235" in map_resource_text
+    assert "gm_bench.lua" in map_resource_text
+
+
+def test_bench_inject_short_output_option(tmp_path):
+    src = tmp_path / "test.miz"
+    out = tmp_path / "test.bench.miz"
+    _make_miz(src)
+
+    result = runner.invoke(app, ["bench", "inject", str(src), "-o", str(out)])
+
+    assert result.exit_code == 0
+    assert out.exists()
+
+
+def test_bench_inject_missing_file(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "bench",
+            "inject",
+            str(tmp_path / "nope.miz"),
+            "--output",
+            str(tmp_path / "bench.miz"),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+
+def test_bench_inject_wrong_extension(tmp_path):
+    src = tmp_path / "mission.txt"
+    src.write_text("not a miz")
+
+    result = runner.invoke(
+        app,
+        ["bench", "inject", str(src), "--output", str(tmp_path / "bench.miz")],
+    )
+
+    assert result.exit_code == 2
+
+
+def test_bench_inject_rejects_same_output_path(tmp_path):
+    src = tmp_path / "test.miz"
+    _make_miz(src)
+
+    result = runner.invoke(app, ["bench", "inject", str(src), "--output", str(src)])
+
+    assert result.exit_code == 2
+    assert "same as input" in result.output
+
+
+def test_bench_inject_rejects_existing_output(tmp_path):
+    src = tmp_path / "test.miz"
+    out = tmp_path / "test.bench.miz"
+    _make_miz(src)
+    out.write_bytes(b"already here")
+
+    result = runner.invoke(app, ["bench", "inject", str(src), "--output", str(out)])
+
+    assert result.exit_code == 2
+    assert "Output already exists" in result.output
+
+
+def test_bench_inject_rejects_existing_gm_bench_trigger(tmp_path):
+    src = tmp_path / "test.miz"
+    first = tmp_path / "test.bench.miz"
+    second = tmp_path / "test.bench2.miz"
+    _make_miz(src)
+    first_result = runner.invoke(
+        app, ["bench", "inject", str(src), "--output", str(first)]
+    )
+    assert first_result.exit_code == 0
+
+    result = runner.invoke(
+        app, ["bench", "inject", str(first), "--output", str(second)]
+    )
+
+    assert result.exit_code == 2
+    assert "GM_BENCH trigger is already present" in result.output
 
 
 # ---------------------------------------------------------------------------

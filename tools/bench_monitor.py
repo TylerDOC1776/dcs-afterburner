@@ -1,13 +1,15 @@
 """
 DCS server CPU/memory benchmark monitor.
 
-Finds DCS.exe instances by their child process names (MemphisBBQ, SouthernBBQ, etc.)
-and samples performance metrics every N seconds into a CSV file.
+Finds DCS.exe / DCS_server.exe instances by their child process names
+(MemphisBBQ, SouthernBBQ, etc.) and samples performance metrics every N
+seconds into a CSV file.
 
 Usage:
     python bench_monitor.py --list
     python bench_monitor.py --server MemphisBBQ --out bench_cpu.csv
     python bench_monitor.py --server MemphisBBQ --interval 2 --out bench_cpu.csv
+    python bench_monitor.py --server MemphisBBQ --duration 3600 --out bench_cpu.csv
 
 Requirements:
     pip install psutil
@@ -20,6 +22,7 @@ import csv
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import NamedTuple
 
 try:
@@ -34,41 +37,82 @@ class DcsInstance(NamedTuple):
     child_pid: int | None
 
 
+_CSV_HEADER = [
+    "timestamp_utc",
+    "elapsed_s",
+    "cpu_pct",
+    "cpu_pct_raw",
+    "mem_mb",
+    "threads",
+    "child_cpu_pct",
+    "child_mem_mb",
+]
+
+
 def find_dcs_instances() -> list[DcsInstance]:
     """Return all running DCS.exe instances, identified by their named child process."""
     instances: list[DcsInstance] = []
 
     for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if proc.info["name"] and "DCS" in proc.info["name"] and proc.info["name"].endswith(".exe"):
-                children = proc.children()
-                if children:
-                    for child in children:
-                        try:
-                            child_name = child.name().replace(".exe", "")
-                            # Skip generic Windows sub-processes
-                            if child_name not in ("conhost", "WerFault", "DCS"):
-                                instances.append(DcsInstance(
-                                    server_name=child_name,
-                                    parent_pid=proc.pid,
-                                    child_pid=child.pid,
-                                ))
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
-                else:
-                    # No named child — list as unnamed
-                    instances.append(DcsInstance(
+            name = proc.info["name"] or ""
+            if not _is_dcs_process_name(name):
+                continue
+
+            children = proc.children()
+            if children:
+                for child in children:
+                    try:
+                        child_name = _server_name_from_child(child.name())
+                        if child_name is None:
+                            continue
+                        instances.append(
+                            DcsInstance(
+                                server_name=child_name,
+                                parent_pid=proc.pid,
+                                child_pid=child.pid,
+                            )
+                        )
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            else:
+                # No named child — list as unnamed
+                instances.append(
+                    DcsInstance(
                         server_name=f"DCS_{proc.pid}",
                         parent_pid=proc.pid,
                         child_pid=None,
-                    ))
+                    )
+                )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
     return instances
 
 
-def monitor(instance: DcsInstance, interval: float, out_path: str) -> None:
+def _is_dcs_process_name(name: str) -> bool:
+    normalized = name.lower()
+    return normalized.endswith(".exe") and "dcs" in normalized
+
+
+def _server_name_from_child(name: str) -> str | None:
+    child_name = name.removesuffix(".exe")
+    if child_name.lower() in {"conhost", "werfault", "dcs", "dcs_server"}:
+        return None
+    return child_name
+
+
+def monitor(
+    instance: DcsInstance,
+    interval: float,
+    out_path: str | Path,
+    duration: float | None = None,
+) -> None:
+    if interval <= 0:
+        sys.exit("--interval must be greater than 0")
+    if duration is not None and duration <= 0:
+        sys.exit("--duration must be greater than 0")
+
     try:
         parent = psutil.Process(instance.parent_pid)
     except psutil.NoSuchProcess:
@@ -85,32 +129,36 @@ def monitor(instance: DcsInstance, interval: float, out_path: str) -> None:
             child_proc = None
 
     cpu_count = psutil.cpu_count(logical=True) or 1
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Monitoring: {instance.server_name}  (PID {instance.parent_pid})")
     print(f"Output:     {out_path}")
     print(f"Interval:   {interval}s")
+    if duration is not None:
+        print(f"Duration:   {duration}s")
     print(f"CPUs:       {cpu_count} logical")
     print("Press Ctrl+C to stop.\n")
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "timestamp_utc",
-            "elapsed_s",
-            "cpu_pct",           # DCS parent process, normalised to 0-100%
-            "cpu_pct_raw",       # raw psutil value (can exceed 100 on multi-core)
-            "mem_mb",
-            "threads",
-            "child_cpu_pct",     # child process if present, else blank
-            "child_mem_mb",
-        ])
+        writer.writerow(_CSV_HEADER)
         f.flush()
 
         start = time.monotonic()
+        elapsed = 0.0
 
         try:
             while True:
-                time.sleep(interval)
+                if duration is not None and elapsed >= duration:
+                    print(f"\nCompleted {duration:.1f}s — saved to {out_path}")
+                    break
+
+                sleep_for = interval
+                if duration is not None:
+                    sleep_for = min(interval, max(0.0, duration - elapsed))
+                time.sleep(sleep_for)
+
                 now_utc = datetime.now(timezone.utc).isoformat()
                 elapsed = round(time.monotonic() - start, 1)
 
@@ -127,12 +175,25 @@ def monitor(instance: DcsInstance, interval: float, out_path: str) -> None:
                 child_mem = ""
                 if child_proc:
                     try:
-                        child_cpu = round(child_proc.cpu_percent(interval=None) / cpu_count, 2)
+                        child_cpu = round(
+                            child_proc.cpu_percent(interval=None) / cpu_count, 2
+                        )
                         child_mem = round(child_proc.memory_info().rss / 1_048_576, 1)
                     except psutil.NoSuchProcess:
                         child_proc = None
 
-                writer.writerow([now_utc, elapsed, norm_cpu, raw_cpu, mem_mb, threads, child_cpu, child_mem])
+                writer.writerow(
+                    [
+                        now_utc,
+                        elapsed,
+                        norm_cpu,
+                        raw_cpu,
+                        mem_mb,
+                        threads,
+                        child_cpu,
+                        child_mem,
+                    ]
+                )
                 f.flush()
 
                 print(
@@ -153,7 +214,9 @@ def cmd_list() -> None:
     print(f"{'Server':<25} {'Parent PID':>10} {'Child PID':>10}")
     print("-" * 48)
     for inst in instances:
-        print(f"{inst.server_name:<25} {inst.parent_pid:>10} {inst.child_pid or '—':>10}")
+        print(
+            f"{inst.server_name:<25} {inst.parent_pid:>10} {inst.child_pid or '—':>10}"
+        )
 
 
 def cmd_monitor(args: argparse.Namespace) -> None:
@@ -171,9 +234,11 @@ def cmd_monitor(args: argparse.Namespace) -> None:
         instance = matches[0]
     else:
         names = ", ".join(i.server_name for i in instances)
-        sys.exit(f"Multiple DCS instances found — specify one with --server. Running: {names}")
+        sys.exit(
+            f"Multiple DCS instances found — specify one with --server. Running: {names}"
+        )
 
-    monitor(instance, interval=args.interval, out_path=args.out)
+    monitor(instance, interval=args.interval, out_path=args.out, duration=args.duration)
 
 
 def main() -> None:
@@ -181,10 +246,29 @@ def main() -> None:
         prog="bench_monitor",
         description="Monitor DCS server CPU/memory during a benchmark soak run.",
     )
-    parser.add_argument("--list", action="store_true", help="List running DCS instances and exit")
-    parser.add_argument("--server", default=None, help="Server name to monitor (e.g. MemphisBBQ)")
-    parser.add_argument("--interval", type=float, default=1.0, help="Sample interval in seconds (default: 1)")
-    parser.add_argument("--out", default="bench_cpu.csv", help="Output CSV path (default: bench_cpu.csv)")
+    parser.add_argument(
+        "--list", action="store_true", help="List running DCS instances and exit"
+    )
+    parser.add_argument(
+        "--server", default=None, help="Server name to monitor (e.g. MemphisBBQ)"
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        help="Sample interval in seconds (default: 5)",
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Stop automatically after this many seconds",
+    )
+    parser.add_argument(
+        "--out",
+        default="bench_cpu.csv",
+        help="Output CSV path (default: bench_cpu.csv)",
+    )
     args = parser.parse_args()
 
     if args.list:
