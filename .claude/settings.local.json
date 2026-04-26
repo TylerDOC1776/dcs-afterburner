@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip show typer)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(python -m py_compile afterburner/cli.py)",
+      "Bash(python -m pytest tests/test_bench_harness.py tests/test_bench_scoring.py -v)"
+    ]
+  }
+}

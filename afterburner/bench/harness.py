@@ -1,9 +1,9 @@
-import subprocess
-import time
+import csv
 import json
 import os
-import csv
 import statistics
+import subprocess
+import time
 from datetime import datetime
 
 

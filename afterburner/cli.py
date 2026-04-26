@@ -674,7 +674,7 @@ def bench_run(
         try:
             result = harness.run_benchmark(str(mission), duration=duration)
         except Exception as exc:
-            con.print(f"[red]FAILED[/red]")
+            con.print("[red]FAILED[/red]")
             _err.print(f"[red]Error on pass {i}:[/red] {exc}")
             raise typer.Exit(1)
         pass_results.append(result)
