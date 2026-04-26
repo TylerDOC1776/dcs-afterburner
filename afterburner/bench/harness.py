@@ -44,12 +44,16 @@ class DCSBenchmarkHarness:
             )
         cmd = [
             self.presentmon_path,
-            "-process_name", "DCS.exe",
-            "-output_file", output_csv,
+            "-process_name",
+            "DCS.exe",
+            "-output_file",
+            output_csv,
             "-stop_existing_session",
             "-no_top",
         ]
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
     def _stop_process(self, proc: subprocess.Popen, timeout: int = 5) -> None:
         proc.terminate()
@@ -121,16 +125,18 @@ class DCSBenchmarkHarness:
         n = len(fps_asc)
 
         # 1% low: mean of the worst 1% of frames (lowest FPS = longest frametimes)
-        cut_1pct  = max(1, int(n * 0.01))
+        cut_1pct = max(1, int(n * 0.01))
         cut_01pct = max(1, int(n * 0.001))
 
         return {
-            "avg_fps":            round(statistics.mean(fps), 2),
-            "low_1pct_fps":       round(statistics.mean(fps_asc[:cut_1pct]), 2),
-            "low_01pct_fps":      round(statistics.mean(fps_asc[:cut_01pct]), 2),
-            "avg_frametime_ms":   round(statistics.mean(frametimes_ms), 3),
-            "frametime_stdev_ms": round(statistics.stdev(frametimes_ms) if n > 1 else 0.0, 3),
-            "sample_count":       n,
+            "avg_fps": round(statistics.mean(fps), 2),
+            "low_1pct_fps": round(statistics.mean(fps_asc[:cut_1pct]), 2),
+            "low_01pct_fps": round(statistics.mean(fps_asc[:cut_01pct]), 2),
+            "avg_frametime_ms": round(statistics.mean(frametimes_ms), 3),
+            "frametime_stdev_ms": round(
+                statistics.stdev(frametimes_ms) if n > 1 else 0.0, 3
+            ),
+            "sample_count": n,
         }
 
     # ------------------------------------------------------------------
@@ -162,7 +168,9 @@ class DCSBenchmarkHarness:
             pm_proc = self._start_presentmon(csv_path)
             print(f"[harness] PresentMon capturing to {csv_path}")
         else:
-            print("[harness] WARNING: PresentMon not found — FPS metrics will be empty.")
+            print(
+                "[harness] WARNING: PresentMon not found — FPS metrics will be empty."
+            )
 
         time.sleep(duration)
 
@@ -175,10 +183,10 @@ class DCSBenchmarkHarness:
         fps_stats = self._compute_fps_stats(self._parse_frametimes(csv_path))
 
         return {
-            "mission":           mission_path,
+            "mission": mission_path,
             "load_and_run_time": round(end_time - start_time, 2),
-            "timestamp":         datetime.now().isoformat(),
-            "presentmon_csv":    csv_path if pm_proc is not None else None,
+            "timestamp": datetime.now().isoformat(),
+            "presentmon_csv": csv_path if pm_proc is not None else None,
             **fps_stats,
         }
 
