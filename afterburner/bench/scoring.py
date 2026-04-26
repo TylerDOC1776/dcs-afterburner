@@ -25,11 +25,11 @@ class MissionScorer:
         # Weights from the mission validation issue
         self.weights = {
             "frametime_stability": 0.35,
-            "fps_avg":             0.20,
-            "fps_1_low":           0.20,
-            "load_time":           0.10,
+            "fps_avg": 0.20,
+            "fps_1_low": 0.20,
+            "load_time": 0.10,
             "resource_efficiency": 0.10,
-            "stability":           0.05,
+            "stability": 0.05,
         }
 
     # ------------------------------------------------------------------
@@ -53,25 +53,28 @@ class MissionScorer:
             values = [r[key] for r in results if r.get(key) is not None]
             n = len(values)
             if not values:
-                per_metric[key] = {"mean": None, "median": None, "stdev": None, "passes": 0}
+                per_metric[key] = {
+                    "mean": None,
+                    "median": None,
+                    "stdev": None,
+                    "passes": 0,
+                }
                 continue
             per_metric[key] = {
-                "mean":   round(statistics.mean(values), 3),
+                "mean": round(statistics.mean(values), 3),
                 "median": round(statistics.median(values), 3),
-                "stdev":  round(statistics.stdev(values) if n > 1 else 0.0, 3),
+                "stdev": round(statistics.stdev(values) if n > 1 else 0.0, 3),
                 "passes": n,
             }
 
         # Flat summary uses mean values so calculate_score() can accept it directly
-        summary: dict = {
-            k: per_metric[k]["mean"] for k in _NUMERIC_KEYS
-        }
-        summary["mission"]    = results[0].get("mission", "")
+        summary: dict = {k: per_metric[k]["mean"] for k in _NUMERIC_KEYS}
+        summary["mission"] = results[0].get("mission", "")
         summary["pass_count"] = len(results)
 
         return {
             "per_metric": per_metric,
-            "summary":    summary,
+            "summary": summary,
             "confidence": self._confidence_rating(
                 pass_count=len(results),
                 per_metric=per_metric,
@@ -85,7 +88,7 @@ class MissionScorer:
         LOW    — otherwise
         """
         fps_stats = per_metric.get("avg_fps", {})
-        mean  = fps_stats.get("mean")  or 0
+        mean = fps_stats.get("mean") or 0
         stdev = fps_stats.get("stdev") or 0
         cv = (stdev / mean * 100) if mean > 0 else 100
 
@@ -121,11 +124,11 @@ class MissionScorer:
         stability_score = max(0.0, 100.0 - (stdev_ms / 20.0 * 100.0))
 
         # --- Average FPS (60 fps target = 100%) ---
-        avg_fps   = metrics.get("avg_fps") or 0.0
+        avg_fps = metrics.get("avg_fps") or 0.0
         fps_score = min(100.0, (avg_fps / 60.0) * 100.0)
 
         # --- 1% Low FPS (45 fps target = 100%) ---
-        low_fps   = metrics.get("low_1pct_fps") or 0.0
+        low_fps = metrics.get("low_1pct_fps") or 0.0
         low_score = min(100.0, (low_fps / 45.0) * 100.0)
 
         # --- Load time ---
@@ -142,22 +145,23 @@ class MissionScorer:
 
         # --- Weighted final ---
         final_score = (
-            stability_score * self.weights["frametime_stability"] +
-            fps_score       * self.weights["fps_avg"] +
-            low_score       * self.weights["fps_1_low"] +
-            load_score      * self.weights["load_time"] +
-            90.0            * self.weights["resource_efficiency"] +  # placeholder: no CPU/GPU hooks yet
-            100.0           * self.weights["stability"]              # assume stable if no crash
+            stability_score * self.weights["frametime_stability"]
+            + fps_score * self.weights["fps_avg"]
+            + low_score * self.weights["fps_1_low"]
+            + load_score * self.weights["load_time"]
+            + 90.0
+            * self.weights["resource_efficiency"]  # placeholder: no CPU/GPU hooks yet
+            + 100.0 * self.weights["stability"]  # assume stable if no crash
         )
 
         return {
             "score": round(final_score, 2),
-            "band":  self.get_score_band(final_score),
+            "band": self.get_score_band(final_score),
             "breakdown": {
-                "stability":     round(stability_score, 1),
-                "fps":           round(fps_score, 1),
+                "stability": round(stability_score, 1),
+                "fps": round(fps_score, 1),
                 "1_percent_low": round(low_score, 1),
-                "load":          round(load_score, 1),
+                "load": round(load_score, 1),
             },
         }
 

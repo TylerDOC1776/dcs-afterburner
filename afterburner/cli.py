@@ -605,7 +605,9 @@ def bench_push(
 def bench_run(
     mission: Path = typer.Argument(..., help="Path to .miz file to benchmark"),
     dcs_path: Path = typer.Option(..., "--dcs-path", help="Path to DCS.exe"),
-    passes: int = typer.Option(3, "--passes", "-p", help="Number of passes to run (1–5)"),
+    passes: int = typer.Option(
+        3, "--passes", "-p", help="Number of passes to run (1–5)"
+    ),
     duration: int = typer.Option(
         60, "--duration", "-d", help="Seconds per benchmark pass"
     ),
@@ -699,7 +701,7 @@ def bench_run(
     band_color = {
         "LOW RISK": "green",
         "MODERATE": "yellow",
-        "HIGH":     "red",
+        "HIGH": "red",
         "CRITICAL": "bold red",
     }.get(band, "white")
 
@@ -708,21 +710,19 @@ def bench_run(
         f"[bold {band_color}]{scored['score']:.2f}[/bold {band_color}] / 100"
         f"   [{band_color}]{band}[/{band_color}]"
     )
-    con.print(
-        f"  Confidence  {scored['confidence']}  ({scored['pass_count']} passes)"
-    )
+    con.print(f"  Confidence  {scored['confidence']}  ({scored['pass_count']} passes)")
     con.print()
 
     # --- Score breakdown table ---
     bd = scored["breakdown"]
     breakdown = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-    breakdown.add_column("Component",    min_width=22)
-    breakdown.add_column("Score",        justify="right", min_width=7)
-    breakdown.add_column("Weight",       justify="right", min_width=7)
-    breakdown.add_row("Frametime Stability", f"{bd['stability']:.1f}",     "35%")
-    breakdown.add_row("Average FPS",         f"{bd['fps']:.1f}",           "20%")
-    breakdown.add_row("1% Low FPS",          f"{bd['1_percent_low']:.1f}", "20%")
-    breakdown.add_row("Load Time",           f"{bd['load']:.1f}",          "10%")
+    breakdown.add_column("Component", min_width=22)
+    breakdown.add_column("Score", justify="right", min_width=7)
+    breakdown.add_column("Weight", justify="right", min_width=7)
+    breakdown.add_row("Frametime Stability", f"{bd['stability']:.1f}", "35%")
+    breakdown.add_row("Average FPS", f"{bd['fps']:.1f}", "20%")
+    breakdown.add_row("1% Low FPS", f"{bd['1_percent_low']:.1f}", "20%")
+    breakdown.add_row("Load Time", f"{bd['load']:.1f}", "10%")
     con.print(breakdown)
 
     # --- Aggregated metrics table ---
@@ -732,10 +732,10 @@ def bench_run(
     metrics = Table(
         box=box.SIMPLE, show_header=True, pad_edge=False, title="Aggregated Metrics"
     )
-    metrics.add_column("Metric",     min_width=22)
-    metrics.add_column("Mean",       justify="right", min_width=8)
-    metrics.add_column("Median",     justify="right", min_width=8)
-    metrics.add_column("Stdev",      justify="right", min_width=8)
+    metrics.add_column("Metric", min_width=22)
+    metrics.add_column("Mean", justify="right", min_width=8)
+    metrics.add_column("Median", justify="right", min_width=8)
+    metrics.add_column("Stdev", justify="right", min_width=8)
     for key in ("avg_fps", "low_1pct_fps", "frametime_stdev_ms", "avg_frametime_ms"):
         pm = agg["per_metric"].get(key, {})
         metrics.add_row(
@@ -752,10 +752,10 @@ def bench_run(
     json_name = f"{mission.stem}_bench_{ts}.json"
     harness.save_results(
         {
-            "mission":    str(mission),
-            "passes":     pass_results,
+            "mission": str(mission),
+            "passes": pass_results,
             "aggregated": agg["per_metric"],
-            "score":      scored,
+            "score": scored,
         },
         json_name,
     )
