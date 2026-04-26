@@ -601,6 +601,168 @@ def bench_push(
     )
 
 
+@_bench_app.command("run")
+def bench_run(
+    mission: Path = typer.Argument(..., help="Path to .miz file to benchmark"),
+    dcs_path: Path = typer.Option(..., "--dcs-path", help="Path to DCS.exe"),
+    passes: int = typer.Option(3, "--passes", "-p", help="Number of passes to run (1–5)"),
+    duration: int = typer.Option(
+        60, "--duration", "-d", help="Seconds per benchmark pass"
+    ),
+    output_dir: Path = typer.Option(
+        Path("bench_results"),
+        "--output-dir",
+        "-o",
+        help="Directory for PresentMon CSVs and JSON report",
+    ),
+    presentmon: Path = typer.Option(
+        None, "--presentmon", help="Path to PresentMon.exe (auto-detected if omitted)"
+    ),
+) -> None:
+    """Run a multi-pass client-side FPS benchmark on a .miz mission file."""
+    from datetime import datetime
+
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    from afterburner.bench.harness import DCSBenchmarkHarness
+    from afterburner.bench.scoring import MissionScorer
+
+    con = Console()
+
+    # --- Validation ---
+    if not mission.exists():
+        _err.print(f"[red]Error:[/red] File not found: {mission}")
+        raise typer.Exit(2)
+    if mission.suffix.lower() != ".miz":
+        _err.print(f"[red]Error:[/red] Expected a .miz file, got: {mission}")
+        raise typer.Exit(2)
+    if not dcs_path.exists():
+        _err.print(f"[red]Error:[/red] DCS executable not found: {dcs_path}")
+        raise typer.Exit(2)
+    if not 1 <= passes <= 5:
+        _err.print(f"[red]Error:[/red] --passes must be between 1 and 5, got {passes}")
+        raise typer.Exit(2)
+
+    con.print()
+    con.print(
+        f"[bold cyan]DCS Afterburner — Bench Run[/bold cyan]  [dim]{mission.name}[/dim]"
+    )
+    con.print(
+        f"  [dim]Passes: {passes}   Duration: {duration}s each   Output: {output_dir}[/dim]"
+    )
+    con.print()
+
+    # --- Initialise harness ---
+    harness = DCSBenchmarkHarness(
+        dcs_path=str(dcs_path),
+        output_dir=str(output_dir),
+        presentmon_path=str(presentmon) if presentmon else None,
+    )
+    if not harness.presentmon_path:
+        con.print(
+            "[yellow]Warning:[/yellow] PresentMon not found — FPS metrics will be empty. "
+            "Pass [bold]--presentmon[/bold] or add PresentMon to PATH."
+        )
+        con.print()
+
+    # --- Execute passes ---
+    pass_results: list[dict] = []
+    for i in range(1, passes + 1):
+        con.print(f"  [dim]Pass {i}/{passes}[/dim]", end="  ")
+        try:
+            result = harness.run_benchmark(str(mission), duration=duration)
+        except Exception as exc:
+            con.print(f"[red]FAILED[/red]")
+            _err.print(f"[red]Error on pass {i}:[/red] {exc}")
+            raise typer.Exit(1)
+        pass_results.append(result)
+        fps_note = (
+            f"avg {result['avg_fps']} fps"
+            if result["avg_fps"] is not None
+            else "no FPS data"
+        )
+        con.print(
+            f"[green]done[/green]  [dim]{result['load_and_run_time']}s · {fps_note}[/dim]"
+        )
+
+    con.print()
+
+    # --- Aggregate & score ---
+    scorer = MissionScorer()
+    agg = scorer.aggregate_passes(pass_results)
+    scored = scorer.score_aggregated(agg)
+
+    # --- Score header ---
+    band = scored["band"]
+    band_color = {
+        "LOW RISK": "green",
+        "MODERATE": "yellow",
+        "HIGH":     "red",
+        "CRITICAL": "bold red",
+    }.get(band, "white")
+
+    con.print(
+        f"  Score       "
+        f"[bold {band_color}]{scored['score']:.2f}[/bold {band_color}] / 100"
+        f"   [{band_color}]{band}[/{band_color}]"
+    )
+    con.print(
+        f"  Confidence  {scored['confidence']}  ({scored['pass_count']} passes)"
+    )
+    con.print()
+
+    # --- Score breakdown table ---
+    bd = scored["breakdown"]
+    breakdown = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+    breakdown.add_column("Component",    min_width=22)
+    breakdown.add_column("Score",        justify="right", min_width=7)
+    breakdown.add_column("Weight",       justify="right", min_width=7)
+    breakdown.add_row("Frametime Stability", f"{bd['stability']:.1f}",     "35%")
+    breakdown.add_row("Average FPS",         f"{bd['fps']:.1f}",           "20%")
+    breakdown.add_row("1% Low FPS",          f"{bd['1_percent_low']:.1f}", "20%")
+    breakdown.add_row("Load Time",           f"{bd['load']:.1f}",          "10%")
+    con.print(breakdown)
+
+    # --- Aggregated metrics table ---
+    def _fmt(v: float | None) -> str:
+        return f"{v:.2f}" if v is not None else "—"
+
+    metrics = Table(
+        box=box.SIMPLE, show_header=True, pad_edge=False, title="Aggregated Metrics"
+    )
+    metrics.add_column("Metric",     min_width=22)
+    metrics.add_column("Mean",       justify="right", min_width=8)
+    metrics.add_column("Median",     justify="right", min_width=8)
+    metrics.add_column("Stdev",      justify="right", min_width=8)
+    for key in ("avg_fps", "low_1pct_fps", "frametime_stdev_ms", "avg_frametime_ms"):
+        pm = agg["per_metric"].get(key, {})
+        metrics.add_row(
+            key,
+            _fmt(pm.get("mean")),
+            _fmt(pm.get("median")),
+            _fmt(pm.get("stdev")),
+        )
+    con.print(metrics)
+    con.print()
+
+    # --- Save JSON ---
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_name = f"{mission.stem}_bench_{ts}.json"
+    harness.save_results(
+        {
+            "mission":    str(mission),
+            "passes":     pass_results,
+            "aggregated": agg["per_metric"],
+            "score":      scored,
+        },
+        json_name,
+    )
+    con.print(f"  Saved: [dim]{output_dir / json_name}[/dim]")
+    con.print()
+
+
 def _check_fail_on(report: Report, fail_on: str) -> None:
     _check_fail_on_findings(report.findings, fail_on)
 
