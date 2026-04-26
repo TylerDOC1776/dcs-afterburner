@@ -6,7 +6,6 @@ import subprocess
 import time
 from datetime import datetime
 
-
 _PRESENTMON_CANDIDATES = [
     r"C:\Program Files\PresentMon\PresentMon.exe",
     r"C:\Program Files (x86)\PresentMon\PresentMon.exe",
