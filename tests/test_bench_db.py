@@ -7,7 +7,6 @@ import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from afterburner.bench.db import (
@@ -15,6 +14,7 @@ from afterburner.bench.db import (
     CpuRow,
     create_run,
     finish_run,
+    get_log_issue_rows,
     insert_bench_rows,
     insert_cpu_rows,
     open_db,
@@ -91,7 +91,13 @@ def test_open_db_creates_schema(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
     }
-    assert {"runs", "bench_timeseries", "cpu_timeseries", "findings"} <= tables
+    assert {
+        "runs",
+        "bench_timeseries",
+        "cpu_timeseries",
+        "findings",
+        "log_issues",
+    } <= tables
     conn.close()
 
 
@@ -100,9 +106,21 @@ def test_create_and_finish_run(tmp_path):
     run_id = create_run(conn, "TestMission", "2026-04-25T10:00:00+00:00")
     assert isinstance(run_id, int)
 
-    finish_run(conn, run_id, "2026-04-25T11:00:00+00:00", 3600)
-    row = conn.execute("SELECT mission, duration_s FROM runs WHERE id=?", (run_id,)).fetchone()
-    assert row == ("TestMission", 3600)
+    finish_run(
+        conn,
+        run_id,
+        "2026-04-25T11:00:00+00:00",
+        3600,
+        intended_duration_s=1800,
+        bench_elapsed_s=15,
+        run_quality="ok",
+        injection_status="injected",
+    )
+    row = conn.execute(
+        "SELECT mission, duration_s, intended_duration_s, bench_elapsed_s, run_quality, injection_status FROM runs WHERE id=?",
+        (run_id,),
+    ).fetchone()
+    assert row == ("TestMission", 3600, 1800, 15, "ok", "injected")
     conn.close()
 
 
@@ -169,7 +187,17 @@ def test_bench_record_with_cpu_csv(tmp_path):
 
     result = runner.invoke(
         app,
-        ["bench", "record", str(miz), "--log", str(log), "--cpu", str(cpu), "--db", str(db)],
+        [
+            "bench",
+            "record",
+            str(miz),
+            "--log",
+            str(log),
+            "--cpu",
+            str(cpu),
+            "--db",
+            str(db),
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "2 CPU samples" in result.output
@@ -184,7 +212,9 @@ def test_bench_record_no_bench_lines_warns(tmp_path):
     miz = tmp_path / "GoonFront.miz"
     _make_miz(miz)
     log = tmp_path / "dcs.log"
-    log.write_text("2026-04-25 10:00:00.000 INFO EDCORE: DCS started\n", encoding="utf-8")
+    log.write_text(
+        "2026-04-25 10:00:00.000 INFO EDCORE: DCS started\n", encoding="utf-8"
+    )
     db = tmp_path / "bench.db"
 
     result = runner.invoke(
@@ -195,7 +225,9 @@ def test_bench_record_no_bench_lines_warns(tmp_path):
 
     conn = open_db(db)
     count = conn.execute("SELECT COUNT(*) FROM bench_timeseries").fetchone()[0]
+    quality = conn.execute("SELECT run_quality FROM runs WHERE id=1").fetchone()[0]
     assert count == 0
+    assert quality == "no_bench_rows"
     conn.close()
 
 
@@ -206,23 +238,78 @@ def test_bench_record_missing_log(tmp_path):
 
     result = runner.invoke(
         app,
-        ["bench", "record", str(miz), "--log", str(tmp_path / "missing.log"), "--db", str(db)],
+        [
+            "bench",
+            "record",
+            str(miz),
+            "--log",
+            str(tmp_path / "missing.log"),
+            "--db",
+            str(db),
+        ],
     )
     assert result.exit_code == 2
 
 
-def test_bench_record_duration_from_bench_rows(tmp_path):
+def test_bench_record_duration_tracks_intended_and_bench_elapsed(tmp_path):
     miz = tmp_path / "GoonFront.miz"
     _make_miz(miz)
     log = tmp_path / "dcs.log"
     log.write_text(_BENCH_LOG, encoding="utf-8")
     db = tmp_path / "bench.db"
 
-    runner.invoke(app, ["bench", "record", str(miz), "--log", str(log), "--db", str(db)])
+    runner.invoke(
+        app,
+        [
+            "bench",
+            "record",
+            str(miz),
+            "--log",
+            str(log),
+            "--intended-duration",
+            "1800",
+            "--injection-status",
+            "injected",
+            "--db",
+            str(db),
+        ],
+    )
 
     conn = open_db(db)
-    duration = conn.execute("SELECT duration_s FROM runs WHERE id=1").fetchone()[0]
-    assert duration == 15  # max elapsed_s from _BENCH_LOG
+    duration, intended, elapsed, quality, injection = conn.execute(
+        "SELECT duration_s, intended_duration_s, bench_elapsed_s, run_quality, injection_status FROM runs WHERE id=1"
+    ).fetchone()
+    assert duration == 1800
+    assert intended == 1800
+    assert elapsed == 15
+    assert quality == "partial_bench_rows"
+    assert injection == "injected"
+    conn.close()
+
+
+def test_bench_record_stores_hard_stop_log_issue(tmp_path):
+    miz = tmp_path / "GoonFront.miz"
+    _make_miz(miz)
+    log = tmp_path / "dcs.log"
+    log.write_text(
+        '2026-04-27 08:09:02.503 ERROR   SCRIPTING (Main): Mission script error: [string "assert(loadfile(\\"C:/Scripts/Moose.lua\\"))()"]:1: no file \'C:/Scripts/Moose.lua\'\n',
+        encoding="utf-8",
+    )
+    db = tmp_path / "bench.db"
+
+    result = runner.invoke(
+        app, ["bench", "record", str(miz), "--log", str(log), "--db", str(db)]
+    )
+    assert result.exit_code == 0, result.output
+
+    conn = open_db(db)
+    quality, hard_stop = conn.execute(
+        "SELECT run_quality, hard_stop_error FROM runs WHERE id=1"
+    ).fetchone()
+    issues = get_log_issue_rows(conn, 1)
+    assert quality == "mission_script_hard_stop"
+    assert "Moose.lua" in hard_stop
+    assert issues[0]["issue_type"] == "hard_stop"
     conn.close()
 
 
@@ -241,7 +328,17 @@ def _seed_db(db: Path) -> None:
     cpu.write_text(_CPU_CSV, encoding="utf-8")
     runner.invoke(
         app,
-        ["bench", "record", str(miz), "--log", str(log), "--cpu", str(cpu), "--db", str(db)],
+        [
+            "bench",
+            "record",
+            str(miz),
+            "--log",
+            str(log),
+            "--cpu",
+            str(cpu),
+            "--db",
+            str(db),
+        ],
     )
 
 
@@ -252,6 +349,7 @@ def _mock_post(status_code: int = 201, body: dict | None = None):
     resp.text = json.dumps(body or {"id": "brun_abc123"})
     if status_code >= 400:
         import httpx
+
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "error", request=MagicMock(), response=resp
         )
@@ -268,11 +366,15 @@ def test_bench_push_latest_run(tmp_path):
         result = runner.invoke(
             app,
             [
-                "bench", "push",
+                "bench",
+                "push",
                 "https://example.com",
-                "--host-id", "host_abc",
-                "--key", "secret",
-                "--db", str(db),
+                "--host-id",
+                "host_abc",
+                "--key",
+                "secret",
+                "--db",
+                str(db),
             ],
         )
 
@@ -282,9 +384,14 @@ def test_bench_push_latest_run(tmp_path):
     call_kwargs = mock_post.call_args
     sent = call_kwargs.kwargs["json"]
     assert sent["mission"] == "GoonFront"
+    assert sent["run_quality"] == "ok"
+    assert "log_issues" in sent
     assert len(sent["bench_timeseries"]) == 3
     assert len(sent["cpu_timeseries"]) == 2
-    assert call_kwargs.kwargs["headers"] == {"X-Host-Id": "host_abc", "X-Agent-Key": "secret"}
+    assert call_kwargs.kwargs["headers"] == {
+        "X-Host-Id": "host_abc",
+        "X-Agent-Key": "secret",
+    }
 
 
 def test_bench_push_specific_run_id(tmp_path):
@@ -295,12 +402,17 @@ def test_bench_push_specific_run_id(tmp_path):
         result = runner.invoke(
             app,
             [
-                "bench", "push",
+                "bench",
+                "push",
                 "https://example.com",
-                "--host-id", "host_abc",
-                "--key", "secret",
-                "--run-id", "1",
-                "--db", str(db),
+                "--host-id",
+                "host_abc",
+                "--key",
+                "secret",
+                "--run-id",
+                "1",
+                "--db",
+                str(db),
             ],
         )
 
@@ -312,11 +424,15 @@ def test_bench_push_missing_db(tmp_path):
     result = runner.invoke(
         app,
         [
-            "bench", "push",
+            "bench",
+            "push",
             "https://example.com",
-            "--host-id", "host_abc",
-            "--key", "secret",
-            "--db", str(tmp_path / "missing.db"),
+            "--host-id",
+            "host_abc",
+            "--key",
+            "secret",
+            "--db",
+            str(tmp_path / "missing.db"),
         ],
     )
     assert result.exit_code == 2
@@ -326,15 +442,22 @@ def test_bench_push_http_error(tmp_path):
     db = tmp_path / "bench.db"
     _seed_db(db)
 
-    with patch("httpx.post", return_value=_mock_post(status_code=401, body={"detail": "Unauthorized"})):
+    with patch(
+        "httpx.post",
+        return_value=_mock_post(status_code=401, body={"detail": "Unauthorized"}),
+    ):
         result = runner.invoke(
             app,
             [
-                "bench", "push",
+                "bench",
+                "push",
                 "https://example.com",
-                "--host-id", "host_abc",
-                "--key", "wrong",
-                "--db", str(db),
+                "--host-id",
+                "host_abc",
+                "--key",
+                "wrong",
+                "--db",
+                str(db),
             ],
         )
 

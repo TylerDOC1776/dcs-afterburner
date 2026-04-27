@@ -423,19 +423,32 @@ def bench_record(
         help="SQLite DB path (created if absent)",
     ),
     notes: str = typer.Option(None, "--notes", help="Free-text notes for this run"),
+    intended_duration_s: int | None = typer.Option(
+        None,
+        "--intended-duration",
+        help="Expected benchmark duration in seconds from the queue/orchestrator",
+    ),
+    injection_status: str | None = typer.Option(
+        None,
+        "--injection-status",
+        help="Result of scheduler/agent injection step, e.g. injected/already_injected/failed",
+    ),
 ) -> None:
     """Import a GM_BENCH run into the SQLite database."""
     from datetime import datetime, timezone
 
     from afterburner.bench.cpu_parser import parse_cpu_csv
     from afterburner.bench.db import (
+        StoredLogIssue,
         create_run,
         finish_run,
         insert_bench_rows,
         insert_cpu_rows,
         insert_findings,
+        insert_log_issues,
         open_db,
     )
+    from afterburner.bench.log_issues import parse_log_issues
     from afterburner.bench.log_parser import parse_bench_log
 
     for label, path in [("Mission", mission), ("Log", log_file)]:
@@ -454,6 +467,7 @@ def bench_record(
         _err.print(
             "[yellow]Warning:[/yellow] No GM_BENCH lines found in log — is gm_bench.lua injected?"
         )
+    log_issues = parse_log_issues(log_file)
 
     cpu_rows = []
     if cpu_csv is not None:
@@ -483,16 +497,51 @@ def bench_record(
         insert_cpu_rows(conn, run_id, cpu_rows)
     if findings:
         insert_findings(conn, run_id, findings)
+    if log_issues:
+        insert_log_issues(
+            conn,
+            run_id,
+            [
+                StoredLogIssue(
+                    issue_type=i.issue_type,
+                    signature=i.signature,
+                    count=i.count,
+                    first_line=i.first_line,
+                    last_line=i.last_line,
+                    detail=i.detail,
+                )
+                for i in log_issues
+            ],
+        )
 
-    duration_s = int(max((r.elapsed_s for r in bench_rows), default=0))
-    finish_run(conn, run_id, now, duration_s)
+    bench_elapsed_s = int(max((r.elapsed_s for r in bench_rows), default=0))
+    duration_s = intended_duration_s or bench_elapsed_s
+    hard_stop = next((i for i in log_issues if i.issue_type == "hard_stop"), None)
+    run_quality = _bench_run_quality(
+        bench_rows=len(bench_rows),
+        bench_elapsed_s=bench_elapsed_s,
+        intended_duration_s=intended_duration_s,
+        hard_stop=hard_stop is not None,
+    )
+    finish_run(
+        conn,
+        run_id,
+        now,
+        duration_s,
+        intended_duration_s=intended_duration_s,
+        bench_elapsed_s=bench_elapsed_s,
+        run_quality=run_quality,
+        injection_status=injection_status,
+        hard_stop_error=hard_stop.signature if hard_stop else None,
+    )
     conn.close()
 
     con = Console()
     con.print(
         f"[green]Recorded run #{run_id}:[/green] {mission.stem}  "
         f"[dim]{len(bench_rows)} bench samples, {len(cpu_rows)} CPU samples, "
-        f"{len(findings)} findings, {duration_s}s[/dim]"
+        f"{len(findings)} findings, {len(log_issues)} log issues, "
+        f"{duration_s}s, quality={run_quality}[/dim]"
     )
     con.print(f"[dim]DB: {db_path}[/dim]")
 
@@ -522,6 +571,7 @@ def bench_push(
         get_bench_rows,
         get_cpu_rows,
         get_finding_rows,
+        get_log_issue_rows,
         get_run,
         latest_run_id,
         open_db,
@@ -546,6 +596,7 @@ def bench_push(
     bench_rows = get_bench_rows(conn, resolved_id)
     cpu_rows = get_cpu_rows(conn, resolved_id)
     finding_rows = get_finding_rows(conn, resolved_id)
+    log_issue_rows = get_log_issue_rows(conn, resolved_id)
     conn.close()
 
     payload = {
@@ -553,6 +604,11 @@ def bench_push(
         "started_at": run["started_at"],
         "ended_at": run.get("ended_at"),
         "duration_s": run.get("duration_s"),
+        "intended_duration_s": run.get("intended_duration_s"),
+        "bench_elapsed_s": run.get("bench_elapsed_s"),
+        "run_quality": run.get("run_quality"),
+        "injection_status": run.get("injection_status"),
+        "hard_stop_error": run.get("hard_stop_error"),
         "notes": run.get("notes"),
         "bench_timeseries": [
             {
@@ -573,6 +629,7 @@ def bench_push(
             for r in cpu_rows
         ],
         "findings": finding_rows,
+        "log_issues": log_issue_rows,
     }
 
     endpoint = url.rstrip("/") + "/api/v1/bench/runs"
@@ -597,8 +654,29 @@ def bench_push(
     con = Console()
     con.print(
         f"[green]Pushed run #{resolved_id}[/green] → orchestrator run [bold]{remote_id}[/bold]  "
-        f"[dim]{len(bench_rows)} bench, {len(cpu_rows)} CPU, {len(finding_rows)} findings[/dim]"
+        f"[dim]{len(bench_rows)} bench, {len(cpu_rows)} CPU, {len(finding_rows)} findings, "
+        f"{len(log_issue_rows)} log issues[/dim]"
     )
+
+
+def _bench_run_quality(
+    *,
+    bench_rows: int,
+    bench_elapsed_s: int,
+    intended_duration_s: int | None,
+    hard_stop: bool,
+) -> str:
+    if hard_stop and bench_rows == 0:
+        return "mission_script_hard_stop"
+    if bench_rows == 0:
+        return "no_bench_rows"
+    if hard_stop:
+        return "partial_bench_rows"
+    if intended_duration_s and bench_elapsed_s < max(
+        30, int(intended_duration_s * 0.8)
+    ):
+        return "partial_bench_rows"
+    return "ok"
 
 
 def _check_fail_on(report: Report, fail_on: str) -> None:
