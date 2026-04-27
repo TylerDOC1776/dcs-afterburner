@@ -29,7 +29,7 @@ class NativeEvent:
     @property
     def elapsed_s(self) -> float | None:
         value = self.fields.get("t")
-        if value in (None, ""):
+        if value is None or value == "":
             return None
         try:
             return float(value)
