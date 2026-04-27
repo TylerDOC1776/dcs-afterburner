@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at  TEXT    NOT NULL,
     ended_at    TEXT,
     duration_s  INTEGER,
+    intended_duration_s INTEGER,
+    bench_elapsed_s INTEGER,
+    run_quality TEXT NOT NULL DEFAULT 'unknown',
+    injection_status TEXT,
+    hard_stop_error TEXT,
     notes       TEXT
 );
 
@@ -44,9 +49,20 @@ CREATE TABLE IF NOT EXISTS findings (
     detail   TEXT
 );
 
+CREATE TABLE IF NOT EXISTS log_issues (
+    run_id     INTEGER NOT NULL REFERENCES runs(id),
+    issue_type TEXT    NOT NULL,
+    signature  TEXT    NOT NULL,
+    count      INTEGER NOT NULL,
+    first_line TEXT,
+    last_line  TEXT,
+    detail     TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_bench_run    ON bench_timeseries(run_id);
 CREATE INDEX IF NOT EXISTS idx_cpu_run      ON cpu_timeseries(run_id);
 CREATE INDEX IF NOT EXISTS idx_findings_run ON findings(run_id);
+CREATE INDEX IF NOT EXISTS idx_log_issues_run ON log_issues(run_id);
 """
 
 
@@ -66,10 +82,36 @@ class CpuRow:
     threads: int
 
 
+@dataclass
+class StoredLogIssue:
+    issue_type: str
+    signature: str
+    count: int
+    first_line: str | None = None
+    last_line: str | None = None
+    detail: str | None = None
+
+
 def open_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.executescript(_SCHEMA)
+    _migrate_runs(conn)
     return conn
+
+
+def _migrate_runs(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    migrations = {
+        "intended_duration_s": "ALTER TABLE runs ADD COLUMN intended_duration_s INTEGER",
+        "bench_elapsed_s": "ALTER TABLE runs ADD COLUMN bench_elapsed_s INTEGER",
+        "run_quality": "ALTER TABLE runs ADD COLUMN run_quality TEXT NOT NULL DEFAULT 'unknown'",
+        "injection_status": "ALTER TABLE runs ADD COLUMN injection_status TEXT",
+        "hard_stop_error": "ALTER TABLE runs ADD COLUMN hard_stop_error TEXT",
+    }
+    for column, sql in migrations.items():
+        if column not in existing:
+            conn.execute(sql)
+    conn.commit()
 
 
 def create_run(
@@ -91,10 +133,35 @@ def finish_run(
     run_id: int,
     ended_at: str,
     duration_s: int,
+    *,
+    intended_duration_s: int | None = None,
+    bench_elapsed_s: int | None = None,
+    run_quality: str = "unknown",
+    injection_status: str | None = None,
+    hard_stop_error: str | None = None,
 ) -> None:
     conn.execute(
-        "UPDATE runs SET ended_at=?, duration_s=? WHERE id=?",
-        (ended_at, duration_s, run_id),
+        """
+        UPDATE runs
+        SET ended_at=?,
+            duration_s=?,
+            intended_duration_s=?,
+            bench_elapsed_s=?,
+            run_quality=?,
+            injection_status=?,
+            hard_stop_error=?
+        WHERE id=?
+        """,
+        (
+            ended_at,
+            duration_s,
+            intended_duration_s,
+            bench_elapsed_s,
+            run_quality,
+            injection_status,
+            hard_stop_error,
+            run_id,
+        ),
     )
     conn.commit()
 
@@ -135,6 +202,29 @@ def insert_findings(
     conn.commit()
 
 
+def insert_log_issues(
+    conn: sqlite3.Connection,
+    run_id: int,
+    issues: list[StoredLogIssue],
+) -> None:
+    conn.executemany(
+        "INSERT INTO log_issues VALUES (?,?,?,?,?,?,?)",
+        [
+            (
+                run_id,
+                i.issue_type,
+                i.signature,
+                i.count,
+                i.first_line,
+                i.last_line,
+                i.detail,
+            )
+            for i in issues
+        ],
+    )
+    conn.commit()
+
+
 def get_run(conn: sqlite3.Connection, run_id: int) -> dict | None:
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
@@ -170,6 +260,20 @@ def get_finding_rows(conn: sqlite3.Connection, run_id: int) -> list[dict]:
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT rule_id, severity, detail FROM findings WHERE run_id=?",
+        (run_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_log_issue_rows(conn: sqlite3.Connection, run_id: int) -> list[dict]:
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """
+        SELECT issue_type, signature, count, first_line, last_line, detail
+        FROM log_issues
+        WHERE run_id=?
+        ORDER BY issue_type, count DESC
+        """,
         (run_id,),
     ).fetchall()
     return [dict(r) for r in rows]
