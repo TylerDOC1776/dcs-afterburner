@@ -120,6 +120,22 @@
     .detail-mission { font-size: 15px; font-weight: 700; color: var(--blue); }
     .detail-meta { color: var(--subtext0); font-size: 12px; }
 
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    @media (max-width: 640px) { .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .summary-item {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 0;
+    }
+    .summary-label { display: block; font-size: 10px; color: var(--overlay1); text-transform: uppercase; margin-bottom: 4px; }
+    .summary-value { font-size: 12px; color: var(--text); }
+
     .charts-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -215,6 +231,8 @@
         <span class="detail-meta" id="detail-meta"></span>
       </div>
 
+      <div id="summary-strip" class="summary-strip"></div>
+
       <div>
         <div class="section-title">Scheduler &amp; AI Load</div>
         <div class="charts-grid">
@@ -306,6 +324,13 @@ function line(label, data, color) {
   };
 }
 
+function summaryValue(run, key, fallback = '—') {
+  const summary = run.summary || {};
+  const value = summary[key];
+  if (value === null || value === undefined || value === '') return fallback;
+  return value;
+}
+
 async function loadRuns() {
   const container = document.getElementById('run-list-container');
   try {
@@ -350,6 +375,26 @@ async function loadRun(runId, card) {
     document.getElementById('detail-mission').textContent = run.mission;
     document.getElementById('detail-meta').textContent =
       `${fmtDate(run.started_at)}  ·  ${fmtDuration(run.duration_s)}`;
+
+    const summaryStrip = document.getElementById('summary-strip');
+    summaryStrip.innerHTML = `
+      <div class="summary-item">
+        <span class="summary-label">validity</span>
+        <span class="summary-value">${summaryValue(run, 'validity_status')}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">score</span>
+        <span class="summary-value">${summaryValue(run, 'performance_score')}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">bench samples</span>
+        <span class="summary-value">${summaryValue(run, 'bench_sample_count')}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">cpu samples</span>
+        <span class="summary-value">${summaryValue(run, 'cpu_sample_count')}</span>
+      </div>
+    `;
 
     const ts = run.bench_timeseries || [];
     const labels = ts.map(r => `${Math.round(r.elapsed_s / 60)}m`);
