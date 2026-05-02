@@ -199,6 +199,47 @@
       color: var(--overlay1);
       margin-bottom: 8px;
     }
+
+    .analytics-section { margin-top: 24px; }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      background: var(--mantle);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+    }
+    th, td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--surface0);
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: 0; }
+    th {
+      color: var(--overlay1);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    td { color: var(--subtext1); font-size: 12px; }
+    .table-mission {
+      color: var(--text);
+      font-weight: 700;
+      white-space: normal;
+      min-width: 180px;
+    }
+    .score-low { color: var(--red); font-weight: 700; }
+    .score-mid { color: var(--yellow); font-weight: 700; }
+    .score-high { color: var(--green); font-weight: 700; }
+    .rule-id { color: var(--mauve); font-weight: 700; }
+    .table-wrap .empty,
+    .table-wrap .loading,
+    .table-wrap .error-msg { padding: 12px; }
   </style>
 </head>
 <body>
@@ -220,6 +261,20 @@
       <div class="subtitle">DCS server performance captured via GM_BENCH</div>
       <div id="run-list-container" class="run-list">
         <div class="loading">Loading runs…</div>
+      </div>
+
+      <div class="analytics-section">
+        <div class="section-title">Worst Runs</div>
+        <div id="worst-runs-container" class="table-wrap">
+          <div class="loading">Loading runs…</div>
+        </div>
+      </div>
+
+      <div class="analytics-section">
+        <div class="section-title">Rule Effectiveness</div>
+        <div id="rule-effectiveness-container" class="table-wrap">
+          <div class="loading">Loading findings…</div>
+        </div>
       </div>
     </div>
 
@@ -274,6 +329,16 @@
 const API = 'https://goon.gsquad.cc/api/v1';
 const charts = {};
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[ch]);
+}
+
 function fmtDuration(s) {
   if (!s) return '—';
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
@@ -285,6 +350,36 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
+}
+
+function fmtNumber(value, digits = 1) {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(digits) : '—';
+}
+
+function fmtMetric(value, digits, unit) {
+  const formatted = fmtNumber(value, digits);
+  return formatted === '—' ? formatted : `${formatted}${unit}`;
+}
+
+function fmtScore(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(0) : '—';
+}
+
+function scoreClass(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  if (number < 50) return 'score-low';
+  if (number < 80) return 'score-mid';
+  return 'score-high';
+}
+
+function severityClass(value) {
+  const safe = String(value ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return safe ? `sev-${safe}` : '';
 }
 
 function chartDefaults(label, color) {
@@ -331,14 +426,150 @@ function summaryValue(run, key, fallback = '—') {
   return value;
 }
 
+function renderWorstRuns(runs) {
+  const container = document.getElementById('worst-runs-container');
+  const worst = runs
+    .filter(run => {
+      const summary = run.summary || {};
+      return (
+        summary.validity_status === 'valid' &&
+        summary.performance_score !== null &&
+        summary.performance_score !== undefined
+      );
+    })
+    .sort((a, b) =>
+      Number(a.summary.performance_score) - Number(b.summary.performance_score)
+    )
+    .slice(0, 10);
+
+  if (!worst.length) {
+    container.innerHTML = '<div class="empty">No scored valid runs.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Mission</th>
+          <th>Score</th>
+          <th>P95 Drift</th>
+          <th>P95 CPU</th>
+          <th>Findings</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${worst.map(run => {
+          const summary = run.summary || {};
+          return `
+            <tr>
+              <td class="table-mission">${escapeHtml(run.mission)}</td>
+              <td class="${scoreClass(summary.performance_score)}">${fmtScore(summary.performance_score)}</td>
+              <td>${fmtMetric(summary.p95_drift_s, 3, 's')}</td>
+              <td>${fmtMetric(summary.p95_cpu_pct, 1, '%')}</td>
+              <td>${summary.findings_count ?? '—'}</td>
+              <td>${fmtDate(run.started_at)}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function renderRuleEffectiveness(runs) {
+  const container = document.getElementById('rule-effectiveness-container');
+  const candidates = runs
+    .filter(run => {
+      const summary = run.summary || {};
+      return (
+        summary.validity_status === 'valid' &&
+        Number(summary.findings_count || 0) > 0
+      );
+    })
+    .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
+    .slice(0, 20);
+
+  if (!candidates.length) {
+    container.innerHTML = '<div class="empty">No valid runs with findings.</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="loading">Loading findings…</div>';
+  const details = await Promise.all(candidates.map(async run => {
+    try {
+      const resp = await fetch(`${API}/bench/runs/${run.id}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }));
+
+  const rules = new Map();
+  for (const run of details) {
+    for (const finding of run?.findings || []) {
+      if (!finding.rule_id) continue;
+      const current = rules.get(finding.rule_id) || {
+        rule_id: finding.rule_id,
+        hit_count: 0,
+        critical_count: 0,
+        warning_count: 0,
+      };
+      current.hit_count += 1;
+      if (finding.severity === 'critical') current.critical_count += 1;
+      if (finding.severity === 'warning') current.warning_count += 1;
+      rules.set(finding.rule_id, current);
+    }
+  }
+
+  const rows = Array.from(rules.values())
+    .sort((a, b) =>
+      b.hit_count - a.hit_count || a.rule_id.localeCompare(b.rule_id)
+    );
+
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty">No findings returned by run detail.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Rule</th>
+          <th>Hits</th>
+          <th>Critical</th>
+          <th>Warning</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(rule => `
+          <tr>
+            <td class="rule-id">${escapeHtml(rule.rule_id)}</td>
+            <td>${rule.hit_count}</td>
+            <td class="sev-critical">${rule.critical_count}</td>
+            <td class="sev-warning">${rule.warning_count}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 async function loadRuns() {
   const container = document.getElementById('run-list-container');
+  const worstContainer = document.getElementById('worst-runs-container');
+  const ruleContainer = document.getElementById('rule-effectiveness-container');
   try {
     const resp = await fetch(`${API}/bench/runs?limit=50`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const runs = await resp.json();
     if (!runs.length) {
       container.innerHTML = '<div class="empty">No runs recorded yet.</div>';
+      worstContainer.innerHTML = '<div class="empty">No runs recorded yet.</div>';
+      ruleContainer.innerHTML = '<div class="empty">No runs recorded yet.</div>';
       return;
     }
     container.innerHTML = '';
@@ -346,15 +577,19 @@ async function loadRuns() {
       const card = document.createElement('div');
       card.className = 'run-card';
       card.innerHTML = `
-        <div class="run-mission">${run.mission}</div>
+        <div class="run-mission">${escapeHtml(run.mission)}</div>
         <div class="run-duration">${fmtDuration(run.duration_s)}</div>
         <div class="run-meta">${fmtDate(run.started_at)}</div>
       `;
       card.addEventListener('click', () => loadRun(run.id, card));
       container.appendChild(card);
     }
+    renderWorstRuns(runs);
+    await renderRuleEffectiveness(runs);
   } catch (e) {
     container.innerHTML = `<div class="error-msg">Failed to load runs: ${e.message}</div>`;
+    worstContainer.innerHTML = '<div class="error-msg">Failed to load runs.</div>';
+    ruleContainer.innerHTML = '<div class="error-msg">Failed to load findings.</div>';
   }
 }
 
@@ -423,9 +658,9 @@ async function loadRun(runId, card) {
     } else {
       fl.innerHTML = findings.map(f => `
         <div class="finding">
-          <span class="sev sev-${f.severity}">${f.severity}</span>
-          <span class="finding-rule">${f.rule_id}</span>
-          <span class="finding-detail">${f.detail || ''}</span>
+          <span class="sev ${severityClass(f.severity)}">${escapeHtml(f.severity)}</span>
+          <span class="finding-rule">${escapeHtml(f.rule_id)}</span>
+          <span class="finding-detail">${escapeHtml(f.detail || '')}</span>
         </div>
       `).join('');
     }
