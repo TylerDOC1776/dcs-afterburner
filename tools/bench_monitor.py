@@ -1,9 +1,8 @@
 """
 DCS server CPU/memory benchmark monitor.
 
-Finds DCS.exe / DCS_server.exe instances by their child process names
-(MemphisBBQ, SouthernBBQ, etc.) and samples performance metrics every N
-seconds into a CSV file.
+Finds DCS_server.exe instances by their -w (saved games) argument and samples
+performance metrics every N seconds into a CSV file.
 
 Usage:
     python bench_monitor.py --list
@@ -50,40 +49,32 @@ _CSV_HEADER = [
 
 
 def find_dcs_instances() -> list[DcsInstance]:
-    """Return all running DCS.exe instances, identified by their named child process."""
+    """Return all running DCS_server.exe instances, identified by their -w argument."""
     instances: list[DcsInstance] = []
 
-    for proc in psutil.process_iter(["pid", "name"]):
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
             name = proc.info["name"] or ""
             if not _is_dcs_process_name(name):
                 continue
 
-            children = proc.children()
-            if children:
-                for child in children:
-                    try:
-                        child_name = _server_name_from_child(child.name())
-                        if child_name is None:
-                            continue
-                        instances.append(
-                            DcsInstance(
-                                server_name=child_name,
-                                parent_pid=proc.pid,
-                                child_pid=child.pid,
-                            )
-                        )
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            else:
-                # No named child — list as unnamed
-                instances.append(
-                    DcsInstance(
-                        server_name=f"DCS_{proc.pid}",
-                        parent_pid=proc.pid,
-                        child_pid=None,
-                    )
+            cmdline = proc.info["cmdline"] or []
+            server_name = None
+            if "-w" in cmdline:
+                idx = cmdline.index("-w")
+                if idx + 1 < len(cmdline):
+                    server_name = cmdline[idx + 1]
+
+            if server_name is None:
+                server_name = f"DCS_{proc.pid}"
+
+            instances.append(
+                DcsInstance(
+                    server_name=server_name,
+                    parent_pid=proc.pid,
+                    child_pid=None,
                 )
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
@@ -93,13 +84,6 @@ def find_dcs_instances() -> list[DcsInstance]:
 def _is_dcs_process_name(name: str) -> bool:
     normalized = name.lower()
     return normalized.endswith(".exe") and "dcs" in normalized
-
-
-def _server_name_from_child(name: str) -> str | None:
-    child_name = name.removesuffix(".exe")
-    if child_name.lower() in {"conhost", "werfault", "dcs", "dcs_server"}:
-        return None
-    return child_name
 
 
 def monitor(
@@ -120,13 +104,6 @@ def monitor(
 
     # Prime cpu_percent — first call always returns 0.0
     parent.cpu_percent(interval=None)
-    child_proc = None
-    if instance.child_pid:
-        try:
-            child_proc = psutil.Process(instance.child_pid)
-            child_proc.cpu_percent(interval=None)
-        except psutil.NoSuchProcess:
-            child_proc = None
 
     cpu_count = psutil.cpu_count(logical=True) or 1
     out_path = Path(out_path)
@@ -171,17 +148,6 @@ def monitor(
                     print(f"\n[{elapsed}s] DCS process exited.")
                     break
 
-                child_cpu = ""
-                child_mem = ""
-                if child_proc:
-                    try:
-                        child_cpu = round(
-                            child_proc.cpu_percent(interval=None) / cpu_count, 2
-                        )
-                        child_mem = round(child_proc.memory_info().rss / 1_048_576, 1)
-                    except psutil.NoSuchProcess:
-                        child_proc = None
-
                 writer.writerow(
                     [
                         now_utc,
@@ -190,8 +156,8 @@ def monitor(
                         raw_cpu,
                         mem_mb,
                         threads,
-                        child_cpu,
-                        child_mem,
+                        "",
+                        "",
                     ]
                 )
                 f.flush()
@@ -211,12 +177,10 @@ def cmd_list() -> None:
     if not instances:
         print("No DCS.exe instances found.")
         return
-    print(f"{'Server':<25} {'Parent PID':>10} {'Child PID':>10}")
-    print("-" * 48)
+    print(f"{'Server':<25} {'Parent PID':>10}")
+    print("-" * 38)
     for inst in instances:
-        print(
-            f"{inst.server_name:<25} {inst.parent_pid:>10} {inst.child_pid or '—':>10}"
-        )
+        print(f"{inst.server_name:<25} {inst.parent_pid:>10}")
 
 
 def cmd_monitor(args: argparse.Namespace) -> None:
