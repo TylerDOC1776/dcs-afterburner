@@ -653,7 +653,7 @@ def bench_push(
     remote_id = resp.json().get("id", "?")
     con = Console()
     con.print(
-        f"[green]Pushed run #{resolved_id}[/green] → orchestrator run [bold]{remote_id}[/bold]  "
+        f"[green]Pushed run #{resolved_id}[/green] -> orchestrator run [bold]{remote_id}[/bold]  "
         f"[dim]{len(bench_rows)} bench, {len(cpu_rows)} CPU, {len(finding_rows)} findings, "
         f"{len(log_issue_rows)} log issues[/dim]"
     )
