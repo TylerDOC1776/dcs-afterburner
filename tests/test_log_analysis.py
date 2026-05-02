@@ -167,41 +167,29 @@ def test_log003_different_shape_name():
 
 
 # ---------------------------------------------------------------------------
-# LOG_004
+# LOG_004 — Suppressed
 # ---------------------------------------------------------------------------
 
 
-def test_log004_fires():
+def test_log004_is_suppressed():
     findings = correlate(_events(_DAMAGE_LINE))
-    assert any(f.rule_id == "LOG_004" for f in findings)
+    assert not any(f.rule_id == "LOG_004" for f in findings)
 
 
-def test_log004_severity_is_info():
-    findings = correlate(_events(_DAMAGE_LINE))
-    f = next(f for f in findings if f.rule_id == "LOG_004")
-    assert f.severity == Severity.INFO
-
-
-def test_log004_different_unit_type():
+def test_log004_different_unit_type_is_suppressed():
     line = "   10.000 INFO    SCRIPTING (Main): Error: Unit [Su-27]: Corrupt damage model"
     findings = correlate(_events(line))
-    assert any(f.rule_id == "LOG_004" for f in findings)
+    assert not any(f.rule_id == "LOG_004" for f in findings)
 
 
 # ---------------------------------------------------------------------------
-# LOG_005
+# LOG_005 — Suppressed
 # ---------------------------------------------------------------------------
 
 
-def test_log005_fires():
+def test_log005_is_suppressed():
     findings = correlate(_events(_TCP_LINE))
-    assert any(f.rule_id == "LOG_005" for f in findings)
-
-
-def test_log005_severity_is_info():
-    findings = correlate(_events(_TCP_LINE))
-    f = next(f for f in findings if f.rule_id == "LOG_005")
-    assert f.severity == Severity.INFO
+    assert not any(f.rule_id == "LOG_005" for f in findings)
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +200,18 @@ def test_log005_severity_is_info():
 def test_no_findings_for_clean_log():
     findings = correlate(_events(_UNRELATED_LINE))
     assert findings == []
+
+
+def test_suppressed_patterns_produce_no_findings():
+    # Mixed log with suppressed and non-suppressed errors
+    text = "\n".join([_RADIO_LINE, _DAMAGE_LINE, _TCP_LINE])
+    findings = correlate(parse_log(text))
+    ids = [f.rule_id for f in findings]
+
+    assert "LOG_002" in ids
+    assert "LOG_004" not in ids
+    assert "LOG_005" not in ids
+    assert len(findings) == 1
 
 
 def test_no_findings_empty():

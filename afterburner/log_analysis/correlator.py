@@ -24,6 +24,7 @@ from afterburner.log_analysis.patterns import (
     _LOG_001_ASSERT,
     ALL_PATTERNS,
     LOG_001,
+    SUPPRESSED_PATTERNS,
     LogPattern,
 )
 from afterburner.models.findings import ReportFinding
@@ -41,6 +42,13 @@ def correlate(events: list[LogEvent]) -> list[ReportFinding]:
 
     One finding is emitted per matched pattern (occurrence count in detail).
     """
+    # Filter out events matching any suppressed pattern
+    events = [
+        e
+        for e in events
+        if not any(p.matches(e.full_message) for p in SUPPRESSED_PATTERNS)
+    ]
+
     findings: list[ReportFinding] = []
 
     # LOG_001 — two-line pair check
