@@ -27,6 +27,8 @@ class LogPattern:
     contains: str | None = None
     # regex match — if set, compiled and matched against event.full_message
     pattern: str | None = None
+    # If True, the correlator skips lines matching this pattern
+    suppress: bool = False
 
     def matches(self, message: str) -> bool:
         if self.contains is not None and self.contains not in message:
@@ -105,6 +107,7 @@ LOG_004 = LogPattern(
     ),
     fix=None,
     pattern=r"Corrupt damage model",
+    suppress=True,
 )
 
 LOG_005 = LogPattern(
@@ -118,7 +121,12 @@ LOG_005 = LogPattern(
     ),
     fix=None,
     contains="attempt to index upvalue 'tcp' (a nil value)",
+    suppress=True,
 )
 
 # Ordered list used by the correlator (LOG_001 handled separately)
 ALL_PATTERNS: list[LogPattern] = [LOG_002, LOG_003, LOG_004, LOG_005]
+
+# Confirmed-harmless engine errors that are suppressed to reduce noise.
+# Suppressed patterns produce no findings and are not counted.
+SUPPRESSED_PATTERNS: list[LogPattern] = [p for p in ALL_PATTERNS if p.suppress]
