@@ -1,0 +1,25 @@
+on:
+  workflow_call:
+    inputs:
+      miz-glob:
+        type: string
+        default: "**/*.miz"
+        required: false
+      fail-on:
+        type: string
+        default: critical
+        required: false
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - run: pip install dcs-afterburner
+
+      - run: afterburner analyze ${{ inputs.miz-glob }} --fail-on ${{ inputs.fail-on }}
