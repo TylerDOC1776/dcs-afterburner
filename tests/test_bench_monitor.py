@@ -13,28 +13,15 @@ class _MemInfo:
         self.rss = rss
 
 
-class _FakeChild:
-    def __init__(self, pid: int, name: str):
-        self.pid = pid
-        self._name = name
-
-    def name(self) -> str:
-        return self._name
-
-
 class _FakeProc:
     def __init__(
         self,
         pid: int,
         name: str,
-        children: list[_FakeChild] | None = None,
+        cmdline: list[str] | None = None,
     ):
         self.pid = pid
-        self.info = {"pid": pid, "name": name}
-        self._children = children or []
-
-    def children(self) -> list[_FakeChild]:
-        return self._children
+        self.info = {"pid": pid, "name": name, "cmdline": cmdline or []}
 
 
 class _FakePsutilProcess:
@@ -57,16 +44,7 @@ def test_is_dcs_process_name_matches_dcs_server_exe():
     assert bench_monitor._is_dcs_process_name("DCS_server.exe")
 
 
-def test_server_name_from_child_ignores_generic_children():
-    assert bench_monitor._server_name_from_child("conhost.exe") is None
-    assert bench_monitor._server_name_from_child("DCS_server.exe") is None
-
-
-def test_server_name_from_child_strips_exe_suffix():
-    assert bench_monitor._server_name_from_child("MemphisBBQ.exe") == "MemphisBBQ"
-
-
-def test_find_dcs_instances_uses_named_child(monkeypatch):
+def test_find_dcs_instances_uses_cmdline_w_arg(monkeypatch):
     monkeypatch.setattr(
         bench_monitor.psutil,
         "process_iter",
@@ -75,13 +53,13 @@ def test_find_dcs_instances_uses_named_child(monkeypatch):
             _FakeProc(
                 200,
                 "DCS_server.exe",
-                [_FakeChild(201, "conhost.exe"), _FakeChild(202, "MemphisBBQ.exe")],
+                ["C:\\DCS\\bin\\DCS_server.exe", "-w", "MemphisBBQ"],
             ),
         ],
     )
 
     assert bench_monitor.find_dcs_instances() == [
-        bench_monitor.DcsInstance("MemphisBBQ", 200, 202)
+        bench_monitor.DcsInstance("MemphisBBQ", 200, None)
     ]
 
 
@@ -89,7 +67,7 @@ def test_find_dcs_instances_falls_back_to_pid_name(monkeypatch):
     monkeypatch.setattr(
         bench_monitor.psutil,
         "process_iter",
-        lambda attrs: [_FakeProc(200, "DCS.exe")],
+        lambda attrs: [_FakeProc(200, "DCS.exe", ["C:\\DCS\\bin\\DCS.exe"])],
     )
 
     assert bench_monitor.find_dcs_instances() == [
@@ -152,7 +130,6 @@ def test_cmd_monitor_requires_server_when_multiple(monkeypatch):
 def test_monitor_writes_csv_row(monkeypatch, tmp_path):
     processes = {
         200: _FakePsutilProcess(cpu_pct=80.0, rss=512 * 1_048_576, threads=42),
-        201: _FakePsutilProcess(cpu_pct=20.0, rss=128 * 1_048_576, threads=5),
     }
     clock = {"now": 0.0}
 
@@ -171,7 +148,7 @@ def test_monitor_writes_csv_row(monkeypatch, tmp_path):
 
     out_path = tmp_path / "nested" / "bench_cpu.csv"
     bench_monitor.monitor(
-        bench_monitor.DcsInstance("MemphisBBQ", 200, 201),
+        bench_monitor.DcsInstance("MemphisBBQ", 200, None),
         interval=5.0,
         out_path=out_path,
         duration=5.0,
@@ -188,8 +165,8 @@ def test_monitor_writes_csv_row(monkeypatch, tmp_path):
             "cpu_pct_raw": "80.0",
             "mem_mb": "512.0",
             "threads": "42",
-            "child_cpu_pct": "5.0",
-            "child_mem_mb": "128.0",
+            "child_cpu_pct": "",
+            "child_mem_mb": "",
         }
     ]
 
