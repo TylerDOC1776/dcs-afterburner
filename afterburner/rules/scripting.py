@@ -1,4 +1,4 @@
-"""Scripting rules (PERF_001, PERF_002, SCPT_001)."""
+"""Scripting rules (PERF_001, PERF_002, PERF_004, SCPT_001)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from afterburner.rules.base import Rule, register
 
 _CTLD_NAMES = {"ctld"}
 _CSAR_NAMES = {"csar"}
+_SPLASH_DAMAGE_NAMES = {"splash_damage"}
 
 # Known large frameworks that are routinely shipped unstripped — exclude from
 # the SCPT_001 LOC threshold so it only catches mission-specific script bloat.
@@ -103,6 +104,43 @@ class CsarDetected(Rule):
                     "CSAR detected in mission scripts. "
                     "Timer accumulation (N helis × M wounded groups) can grow on "
                     "long sessions with many active rescues."
+                ),
+                fix=self.fix,
+            )
+        ]
+
+
+@register
+class SplashDamageDetected(Rule):
+    rule_id = "PERF_004"
+    title = "Splash Damage script detected"
+    severity = Severity.WARNING
+    description = (
+        "Detected a Splash Damage script loaded via a DO SCRIPT FILE trigger action. "
+        "Ground ordnance tracking is enabled by default and can add a high steady "
+        "CPU baseline. Unpatched variants may also call getDesc() on recently-hit "
+        "static objects, which can trigger a C-level Lua stack overflow."
+    )
+    fix = (
+        "Disable ground ordnance tracking in the Splash Damage config. Apply the "
+        "static object category pre-check fix before calling getDesc(). Use a "
+        "pre-tuned variant (e.g. VG 3C) if available."
+    )
+    category = "performance"
+
+    def check(self, mission: Mission) -> list[ReportFinding]:
+        if not _matches(mission.script_files, _SPLASH_DAMAGE_NAMES):
+            return []
+        return [
+            ReportFinding(
+                rule_id=self.rule_id,
+                severity=self.severity,
+                title=self.title,
+                detail=(
+                    "Splash Damage detected in mission scripts. Ground ordnance "
+                    "tracking is enabled by default and adds 10–50% CPU load. The "
+                    "static object getDesc() crash (C-level Lua stack overflow on "
+                    "hit static) may also be present if using an unpatched variant."
                 ),
                 fix=self.fix,
             )
