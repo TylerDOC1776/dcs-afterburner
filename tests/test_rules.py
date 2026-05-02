@@ -406,3 +406,25 @@ def test_perf002_info_with_csar():
     assert len(findings) == 1
     assert findings[0].severity == Severity.INFO
     assert findings[0].rule_id == "PERF_002"
+
+
+# ------------------------------------------------------------------
+# PERF_004 — Splash Damage detection
+# ------------------------------------------------------------------
+
+
+def test_perf004_no_finding_without_splash_damage():
+    from afterburner.rules.scripting import SplashDamageDetected
+
+    m = _make_mission(script_files=["MIST_4_5_122.lua"])
+    assert SplashDamageDetected().check(m) == []
+
+
+def test_perf004_warning_with_splash_damage():
+    from afterburner.rules.scripting import SplashDamageDetected
+
+    m = _make_mission(script_files=["splash_damage_3.4.lua"])
+    findings = SplashDamageDetected().check(m)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.WARNING
+    assert findings[0].rule_id == "PERF_004"
